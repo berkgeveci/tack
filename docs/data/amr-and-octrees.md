@@ -132,7 +132,8 @@ every rank, each as its `(lo, hi)` cell indices.
 back for images and rectilinear boxes. A hierarchy with curvilinear boxes
 goes to VTK as a `vtkPartitionedDataSetCollection` with one partitioned
 dataset per level. `td.amr_gaussian_pulse` makes VTK's Gaussian-pulse test
-hierarchy.
+hierarchy. In a VTK pipeline, Tack's AMR filters take a `vtkOverlappingAMR`
+whole (see [VTK](../visualization/vtk.md)).
 
 ## Tree-based AMR
 

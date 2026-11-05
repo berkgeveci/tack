@@ -214,6 +214,7 @@ their cell data.
 | Pieces and ghosts | `GhostCells`, `GenerateGlobalIds`, `MergePieces`, `GhostPoints` | over every piece of a `vtkPartitionedDataSet` |
 | | `Split` | a `vtkPartitionedDataSet` |
 | | `RemoveGhosts` | the input's structure |
+| AMR hierarchies | `AverageDown` | `vtkOverlappingAMR` |
 
 A `vtkPartitionedDataSet` input runs the filter on each piece and gives a
 `vtkPartitionedDataSet`. The algorithms whose Tack filter answers for the
@@ -300,6 +301,56 @@ vector field's components one by one; the statistics keep Tack's names
 centroid, each field's integral on it, and the measure as `Length`, `Area` or
 `Volume`; integrals are by quadrature through each cell's map, so curved and
 higher-order cells exactly.
+
+An AMR hierarchy, a `vtkOverlappingAMR`, is one Tack `AMRDataSet` (see
+[AMR and octrees](../data/amr-and-octrees.md)), each box marked with what a
+finer box covers. The algorithms whose Tack filter takes a hierarchy take it
+whole: `Probe` as its source (each point at its finest box, as
+`vtkAMRResampleFilter` samples), `Statistics`, `Entropy`, `Integrate`,
+`Voxelize`, `GhostCells` and `AverageDown`. A region that a finer box covers,
+and a point that a sibling box holds, counts once. `GhostCells` grows each box
+within its level and gives a `vtkOverlappingAMR` of the input's boxes whose
+blocks are the grown ones. `AverageDown` puts the finer levels' values of one
+field into the coarse cells and points they cover and leaves its input as it
+was.
+
+The other algorithms run box by box, as Tack's filters do on AMR, each level's
+boxes taken as the pieces of a partitioned dataset and the cells a finer box
+covers left out. One that computes fields (`Elevation`, `Gradients`,
+`Project`, ...) gives the hierarchy back with them. One that makes a dataset
+(`Contour`, `Clip`, `Slice`, `Threshold`, ...) gives a
+`vtkPartitionedDataSetCollection` with a partitioned dataset per level, named
+`level0`, `level1`, and so on. Contours and slices of different levels do not
+join where the levels meet ([Adaptive data](adaptive-data.md) has the limits),
+and `Gradients` at a box's edge needs `GhostCells` first, as for any pieces.
+`GenerateGlobalIds`, `Streamlines` and `Advect` refuse a hierarchy, since box by
+box their answers would mislead: ids repeated from level to level, paths
+ending where a finer box begins. Over MPI ranks, each rank holds its own blocks, the others'
+empty, as VTK spreads a hierarchy, and the ranks convert it together
+(`vtk_to_dataset(amr, world=...)` does the same).
+
+<!-- tack-check: vtk-pipeline-amr -->
+```python
+from vtkmodules.vtkFiltersAMR import vtkAMRGaussianPulseSource
+
+import tack
+from tack.interop.vtk.algorithms import AverageDown, GhostCells, Statistics, Threshold
+
+tack.set_default_device("cpu")
+
+pulse = vtkAMRGaussianPulseSource(dimension=3)()       # a box, two finer ones in it
+once = Statistics(fields=["Gaussian-Pulse"])(pulse)    # covered cells counted once
+
+grown = GhostCells(layers=1)(pulse)                    # blocks grown by a layer
+assert grown.GetDataSetAsCartesianGrid(1, 0).number_of_cells > 4 * 6 * 10
+again = Statistics(fields=["Gaussian-Pulse"])(grown)   # ghosts count nowhere
+assert again.GetColumnByName("n").GetValue(0) == once.GetColumnByName("n").GetValue(0)
+
+averaged = AverageDown(field="Gaussian-Pulse")(pulse)  # fine values in the coarse box
+
+kept = Threshold(field=("Gaussian-Pulse", "cells"), lower=0.0, upper=1.0)(pulse)
+assert kept.GetNumberOfPartitionedDataSets() == 2       # a level each, box by box
+```
 
 ## Write your own VTK algorithm
 

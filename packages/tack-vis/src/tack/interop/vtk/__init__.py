@@ -989,7 +989,7 @@ _DEFAULT_FLOAT = _DefaultFloat()
 
 
 def vtk_to_dataset(grid, dtype=_DEFAULT_FLOAT, polyhedral=None, orient=False, id_dtype=None,
-                   origin=None, copy=True, merge_points=None):
+                   origin=None, copy=True, merge_points=None, world=None):
     """Copy a ``vtkUnstructuredGrid``, ``vtkPolyData``, ``vtkStructuredGrid``,
     ``vtkRectilinearGrid`` or ``vtkImageData`` into a ``tack.dataset.DataSet``: an image's points as
     ``UniformCoordinates`` (with its direction matrix), a rectilinear grid's as a
@@ -1059,7 +1059,10 @@ def vtk_to_dataset(grid, dtype=_DEFAULT_FLOAT, polyhedral=None, orient=False, id
     rectilinear grid) converted as above, placed in its level by its
     ``vtkAMRBox``, the levels' refinement ratios kept; the refined cells are
     marked afresh (VTK's ``vtkGhostType`` bits come in and are recomputed).
-    Blocks with ghost layers are refused.
+    Blocks with ghost layers are refused. Over MPI ranks each holds its own
+    blocks (the others' empty, as VTK spreads a hierarchy) and every rank
+    converts together: ``world`` is the ranks, a ``tack.communication.World`` or
+    an mpi4py communicator, by default VTK's (``world()``).
 
     A ``vtkCellGrid`` (VTK's discontinuous-Galerkin cells, read from ``.dg``
     files by ``vtkCellGridReader``) becomes a ``DataSet`` of its cells on its
@@ -1117,7 +1120,7 @@ def vtk_to_dataset(grid, dtype=_DEFAULT_FLOAT, polyhedral=None, orient=False, id
         origin = _far_origin(grid)
     out = _vtk_to_dataset(grid, dtype=dtype, polyhedral=polyhedral, orient=orient,
                           id_dtype=id_dtype, origin=origin, copy=copy,
-                          merge_points=merge_points)
+                          merge_points=merge_points, world=world)
     if grid.GetInformation().Has(_time_key()):
         _stamp(out, grid.GetInformation().Get(_time_key()))
     return out
@@ -1410,7 +1413,8 @@ def _take_cell_data(source, target, rows):
 
 
 def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None,
-                   origin=None, copy=True, merge_points=None, placement=None, _device=None):
+                   origin=None, copy=True, merge_points=None, placement=None, _device=None,
+                   world=None):
     """``vtk_to_dataset`` before the time is stamped. ``placement`` is a structured
     grid's offset in a larger grid (three values), in place of its extent's start:
     an AMR box's place in its level. ``_device`` is the device a ``copy=False``
@@ -1447,7 +1451,7 @@ def _vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtyp
 
     shift = np.asarray(as_origin(origin))
     if isinstance(grid, vtkOverlappingAMR):
-        return _amr_to_dataset(grid, options)
+        return _amr_to_dataset(grid, options, world)
     from vtkmodules.vtkCommonDataModel import vtkPolyData
 
     if isinstance(grid, vtkPolyData):
@@ -1735,10 +1739,18 @@ def _to_vtk_ids(values):
     return np.ascontiguousarray(np.asarray(values), np.int64)
 
 
-def _amr_to_dataset(amr, options):
+def _amr_to_dataset(amr, options, world=None):
     """A ``vtkOverlappingAMR`` as an ``AMRDataSet``: each level's blocks, each placed
-    in its level by its ``vtkAMRBox``."""
+    in its level by its ``vtkAMRBox``; this rank's, in ``world`` (``vtk_to_dataset``'s,
+    VTK's by default)."""
+    from tack.communication import World
     from tack.dataset import AMRDataSet, StructuredTopology
+    from tack.interop.vtk import world as vtk_world
+
+    if world is None:
+        world = vtk_world()
+    elif not isinstance(world, World):
+        world = World(world)                # an mpi4py communicator
 
     levels, ratios = [], []
     for level in range(amr.GetNumberOfLevels()):
@@ -1767,7 +1779,7 @@ def _amr_to_dataset(amr, options):
         levels.append(boxes)
         if level + 1 < amr.GetNumberOfLevels():
             ratios.append(int(amr.GetRefinementRatio(level)))
-    return AMRDataSet(levels, ratios)
+    return AMRDataSet(levels, ratios, world=world)
 
 
 def _bits(array):
