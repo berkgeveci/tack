@@ -48,6 +48,17 @@ def test_no_location_takes_the_first_the_dataset_has(backend):
     assert td.named_field(solid, "normals").space.on == "faces"
 
 
+def test_a_boundary_of_the_same_geometry_derives_its_normals_once(backend):
+    solid = td.tetrahedralize(_grid())
+    for volume in (_grid(), solid):
+        first = td.extract_surface(volume)
+        again = td.extract_surface(volume)
+        assert again.geometry is first.geometry
+        assert td.named_field(again, "normals", "cells") is td.named_field(first, "normals", "cells")
+    moved = td.extract_surface(_grid())
+    assert td.named_field(moved, "normals", "cells") is not td.named_field(first, "normals", "cells")
+
+
 def test_registered_names_and_misses(backend):
     calls = []
 

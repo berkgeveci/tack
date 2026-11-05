@@ -147,8 +147,10 @@ _LOCATIONS = ("points", "cells", "faces")
 def register_derived_field(name, compute, at):
     """Lets ``name`` stand, at ``at`` (``"points"``, ``"cells"`` or ``"faces"``), for a
     field a dataset makes from itself when it stores none of that name there:
-    ``compute(data)`` gives the ``Field`` on ``data``, made the first time it is
-    asked for and kept with the dataset while its geometry is the same. One name
+    ``compute(data)`` gives the ``Field`` on ``data``, a function of its geometry:
+    made the first time it is asked for and kept on the geometry, so every
+    dataset on the same geometry shares it (``extract_surface`` of the same
+    geometry gives the same surface geometry, and so the same normals). One name
     is one quantity, registered at each location it has: Tack registers
     ``normals`` (a surface's at its points and cells, ``surface_normals``'; every
     mesh's at its faces, ``face_geometry``'s), ``measures`` (each cell's volume, area
@@ -177,13 +179,12 @@ def _location(field):
 
 
 def _derived(data, name, at):
-    made = data.__dict__.setdefault("_derived_fields", {})
-    hit = made.get((name, at))
-    if hit is not None and hit[0] is data.geometry:
-        return hit[1]
-    field = _DERIVED[name][at](data)
-    made[(name, at)] = (data.geometry, field)
-    return field
+    # Part of the geometry, kept on it: any dataset on the same geometry (and so
+    # the same topology) shares them.
+    made = data.geometry.__dict__.setdefault("_derived", {})
+    if (name, at) not in made:
+        made[(name, at)] = _DERIVED[name][at](data)
+    return made[(name, at)]
 
 
 def named_field(data, name, at=None):
