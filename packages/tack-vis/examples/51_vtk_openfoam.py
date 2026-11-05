@@ -153,41 +153,13 @@ for i in range(boundary.GetNumberOfBlocks()):
 # ================================================================
 
 if _args.png:
-    import vtkmodules.vtkInteractionStyle
-    import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
-    from vtkmodules.vtkCommonCore import vtkLookupTable
-    from vtkmodules.vtkIOImage import vtkPNGWriter
-    from vtkmodules.vtkRenderingCore import (
-        vtkActor,
-        vtkCompositePolyDataMapper,
-        vtkPolyDataMapper,
-        vtkRenderer,
-        vtkRenderWindow,
-        vtkWindowToImageFilter,
-    )
+    import _scene
 
     plane = sliced.GetBlock(0)
     q = np.asarray(plane.point_data["q_criterion"])
-    slice_mapper = vtkPolyDataMapper(input_data_object=plane, scalar_visibility=True)
-    slice_mapper.SetScalarModeToUsePointFieldData()
-    slice_mapper.SelectColorArray("q_criterion")
-    slice_mapper.SetScalarRange(*np.percentile(q, [2, 98]))
-    slice_mapper.lookup_table = vtkLookupTable(hue_range=(0.667, 0.0))  # blue to red
-    walls = vtkCompositePolyDataMapper(input_data_object=case.GetBlock(1),
-                                       scalar_visibility=False)
-    renderer = vtkRenderer(background=(0.12, 0.12, 0.16))
-    renderer.AddActor(vtkActor(mapper=slice_mapper))
-    wall_actor = vtkActor(mapper=walls)
-    wall_actor.property.opacity = 0.2
-    renderer.AddActor(wall_actor)
-    window = vtkRenderWindow(off_screen_rendering=True, size=(1000, 700))
-    window.AddRenderer(renderer)
-    renderer.ResetCamera()
-    renderer.active_camera.Zoom(1.4)
-    window.Render()
-    # A PNG writer called on its input writes raw pixels (VTK 9.7.1): connect it
-    # and Write().
-    png = vtkPNGWriter(file_name=_args.png)
-    vtkWindowToImageFilter(input=window) >> png
-    png.Write()
-    print(f"rendered {_args.png}")
+    way = _scene.render(_args.png, [
+        _scene.Layer(plane, array="q_criterion",
+                     value_range=tuple(float(v) for v in np.percentile(q, [2, 98]))),
+        _scene.Layer(case.GetBlock(1), color=(0.8, 0.8, 0.85), opacity=0.2)],  # the patches
+        size=(1000, 700), zoom=1.4)
+    print(f"rendered {_args.png} ({way})")

@@ -9,7 +9,10 @@
   cavity) through `Pathlines`, driving and in situ. 53 is an Enzo AMR file:
   statistics and the mass over the hierarchy, a slice of each level. The files
   are fetched once by their SHA-512 (`_vtk_data.py`, `vtk_data.sha512`) or read
-  from `TACK_VTK_DATA`; each takes `--arch` for the device.
+  from `TACK_VTK_DATA`; each takes `--arch` for the device. The VTK examples
+  (47-53) draw their pictures with VTK's views and representations
+  (`vtkViewsScivis`) where the VTK has them, VTK master, and with actors and
+  mappers on VTK 9.7.1, chosen at run time (`_scene.py`).
 - The VTK guide lists every algorithm with VTK's filter that does the same work,
   and has a section each on pieces and trees, MPI ranks, GPUs, summaries, AMR
   hierarchies and time.

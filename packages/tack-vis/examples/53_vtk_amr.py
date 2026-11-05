@@ -136,18 +136,8 @@ assert len(areas) == levels and abs(sum(areas) - 1.0) < 1e-9
 # ================================================================
 
 if _args.png:
-    import vtkmodules.vtkInteractionStyle
-    import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
-    from vtkmodules.vtkCommonCore import vtkLookupTable, vtkPoints
-    from vtkmodules.vtkIOImage import vtkPNGWriter
-    from vtkmodules.vtkRenderingCore import (
-        vtkActor,
-        vtkCompositePolyDataMapper,
-        vtkPolyDataMapper,
-        vtkRenderer,
-        vtkRenderWindow,
-        vtkWindowToImageFilter,
-    )
+    import _scene
+    from vtkmodules.vtkCommonCore import vtkPoints
 
     values = [np.asarray(p.cell_data["log_density"])
               for level in range(levels)
@@ -155,11 +145,6 @@ if _args.png:
                         for j in range(sliced.GetPartitionedDataSet(level).GetNumberOfPartitions())]
               if p is not None and p.number_of_cells]
     low, high = np.percentile(np.concatenate(values), [1, 99.9])
-    mapper = vtkCompositePolyDataMapper(input_data_object=sliced, scalar_visibility=True)
-    mapper.SetScalarModeToUseCellFieldData()
-    mapper.SelectColorArray("log_density")
-    mapper.SetScalarRange(low, high)
-    mapper.lookup_table = vtkLookupTable(hue_range=(0.667, 0.0))  # blue to red
 
     # Each box the plane cuts, outlined a little above it.
     outlines = dm.vtkPolyData()
@@ -177,23 +162,15 @@ if _args.png:
         points.InsertNextPoint(corner)
     outlines.points = points
     outlines.lines = lines
-    outline_actor = vtkActor(mapper=vtkPolyDataMapper(input_data_object=outlines))
-    outline_actor.property.color = (1.0, 1.0, 1.0)
 
-    renderer = vtkRenderer(background=(0.12, 0.12, 0.16))
-    renderer.AddActor(vtkActor(mapper=mapper))
-    renderer.AddActor(outline_actor)
-    window = vtkRenderWindow(off_screen_rendering=True, size=(800, 800))
-    window.AddRenderer(renderer)
     # Framed on the level-1 boxes the plane cuts, where the refinement is.
     fine = [box.GetBounds() for level, _, box in blocks(amr)
             if level == 1 and box.GetBounds()[4] <= _args.z <= box.GetBounds()[5]]
-    renderer.ResetCamera(min(b[0] for b in fine), max(b[1] for b in fine),
-                         min(b[2] for b in fine), max(b[3] for b in fine), _args.z, _args.z)
-    window.Render()
-    # A PNG writer called on its input writes raw pixels (VTK 9.7.1): connect it
-    # and Write().
-    png = vtkPNGWriter(file_name=_args.png)
-    vtkWindowToImageFilter(input=window) >> png
-    png.Write()
-    print(f"rendered {_args.png}")
+    focus = (min(b[0] for b in fine), max(b[1] for b in fine),
+             min(b[2] for b in fine), max(b[3] for b in fine), _args.z, _args.z)
+    way = _scene.render(_args.png, [
+        _scene.Layer(sliced, array="log_density", cells=True,
+                     value_range=(float(low), float(high))),
+        _scene.Layer(outlines, color=(1.0, 1.0, 1.0))],
+        size=(800, 800), focus=focus)
+    print(f"rendered {_args.png} ({way})")

@@ -449,7 +449,10 @@ and the output is a tree of the same shape. See
 Programs in `packages/tack-vis/examples/`, each a pipeline from a reader to a
 rendered picture (`--png`), with checks against VTK's own filters. 50 to 53 read
 VTK's test data, fetched once by its content hashes, or from `TACK_VTK_DATA`, a
-VTK build's `ExternalData` directory.
+VTK build's `ExternalData` directory. The pictures are drawn with VTK's views
+and representations (`vtkScivisView`, `view.show`) where the VTK has them, as
+VTK master does, and with a renderer, mappers and actors on VTK 9.7.1: the
+choice is made when the example runs (`_scene.py`).
 
 | Program | What it shows |
 |---|---|

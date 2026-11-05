@@ -39,7 +39,7 @@ _parser.add_argument('--output', default='results/vtk_pipelines',
 _parser.add_argument('--png', help='render the tubes to this PNG file')
 _args = _parser.parse_args()
 
-import vtkmodules.vtkCommonDataModel  # registers the pythonic constructors
+import vtkmodules.vtkCommonDataModel  # noqa: F401  (registers the pythonic constructors)
 from vtkmodules.vtkCommonDataModel import vtkImageData
 from vtkmodules.vtkFiltersCore import vtkTubeFilter
 from vtkmodules.vtkFiltersGeometry import vtkGeometryFilter
@@ -129,38 +129,11 @@ assert worst_radius < 1e-6 and worst_rise < 1e-9
 # ================================================================
 
 if _args.png:
-    import vtkmodules.vtkInteractionStyle
-    import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
+    import _scene
     from vtkmodules.vtkFiltersModeling import vtkOutlineFilter
-    from vtkmodules.vtkIOImage import vtkPNGWriter
-    from vtkmodules.vtkRenderingCore import (
-        VTK_GET_ARRAY_BY_NAME,
-        VTK_SCALAR_MODE_USE_POINT_FIELD_DATA,
-        vtkActor,
-        vtkPolyDataMapper,
-        vtkRenderer,
-        vtkRenderWindow,
-        vtkWindowToImageFilter,
-    )
 
-    tube_mapper = vtkPolyDataMapper(scalar_visibility=True,
-                                    scalar_mode=VTK_SCALAR_MODE_USE_POINT_FIELD_DATA,
-                                    array_access_mode=VTK_GET_ARRAY_BY_NAME, array_name="time",
-                                    scalar_range=(0.0, float(time.max())))
-    tube_surface >> tube_mapper
-    outline_mapper = vtkPolyDataMapper()
-    reader >> vtkOutlineFilter() >> outline_mapper
-    renderer = vtkRenderer(background=(0.12, 0.12, 0.16))
-    renderer.AddActor(vtkActor(mapper=tube_mapper))
-    renderer.AddActor(vtkActor(mapper=outline_mapper))
-    window = vtkRenderWindow(off_screen_rendering=True, size=(800, 600))
-    window.AddRenderer(renderer)
-    renderer.ResetCamera()
-    renderer.active_camera.Elevation(-60)
-    window.Render()
-    # A PNG writer called on its input writes raw pixels (VTK 9.7.1): connect it
-    # and Write().
-    png = vtkPNGWriter(file_name=_args.png)
-    vtkWindowToImageFilter(input=window) >> png
-    png.Write()
-    print(f"rendered {_args.png}")
+    way = _scene.render(_args.png, [
+        _scene.Layer(tube_surface, array="time", value_range=(0.0, float(time.max()))),
+        _scene.Layer((reader >> vtkOutlineFilter())(), color=(1.0, 1.0, 1.0))],
+        elevation=-60)
+    print(f"rendered {_args.png} ({way})")

@@ -40,7 +40,7 @@ _parser.add_argument('--output', default='results/vtk_pipelines',
 _parser.add_argument('--png', help='render the isosurface to this PNG file')
 _args = _parser.parse_args()
 
-import vtkmodules.vtkCommonDataModel  # registers the pythonic constructors
+import vtkmodules.vtkCommonDataModel  # noqa: F401  (registers the pythonic constructors)
 from vtkmodules.vtkFiltersCore import vtkContourFilter
 from vtkmodules.vtkFiltersVerdict import vtkCellSizeFilter
 from vtkmodules.vtkImagingCore import vtkRTAnalyticSource
@@ -123,39 +123,10 @@ assert "gradient" in surface.point_data.keys()
 # ================================================================
 
 if _args.png:
-    import vtkmodules.vtkInteractionStyle
-    import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
-    from vtkmodules.vtkCommonCore import vtkScalarsToColors
-    from vtkmodules.vtkFiltersGeometry import vtkGeometryFilter
-    from vtkmodules.vtkIOImage import vtkPNGWriter
-    from vtkmodules.vtkRenderingCore import (
-        VTK_GET_ARRAY_BY_NAME,
-        VTK_SCALAR_MODE_USE_POINT_FIELD_DATA,
-        vtkActor,
-        vtkPolyDataMapper,
-        vtkRenderer,
-        vtkRenderWindow,
-        vtkWindowToImageFilter,
-    )
+    import _scene
 
     magnitude = np.linalg.norm(surface.point_data["gradient"], axis=1)
-    mapper = vtkPolyDataMapper(scalar_visibility=True,
-                               scalar_mode=VTK_SCALAR_MODE_USE_POINT_FIELD_DATA,
-                               array_access_mode=VTK_GET_ARRAY_BY_NAME, array_name="gradient",
-                               scalar_range=(0.0, float(magnitude.max())))
-    mapper.lookup_table.vector_mode = vtkScalarsToColors.MAGNITUDE
-    surface >> vtkGeometryFilter() >> mapper
-    renderer = vtkRenderer(background=(0.12, 0.12, 0.16))
-    renderer.AddActor(vtkActor(mapper=mapper))
-    window = vtkRenderWindow(off_screen_rendering=True, size=(800, 600))
-    window.AddRenderer(renderer)
-    renderer.ResetCamera()
-    renderer.active_camera.Azimuth(30)
-    renderer.active_camera.Elevation(20)
-    window.Render()
-    # A PNG writer called on its input writes raw pixels (VTK 9.7.1): connect it
-    # and Write().
-    png = vtkPNGWriter(file_name=_args.png)
-    vtkWindowToImageFilter(input=window) >> png
-    png.Write()
-    print(f"rendered {_args.png}")
+    way = _scene.render(_args.png, [
+        _scene.Layer(surface, array="gradient", value_range=(0.0, float(magnitude.max())))],
+        azimuth=30, elevation=20)
+    print(f"rendered {_args.png} ({way})")

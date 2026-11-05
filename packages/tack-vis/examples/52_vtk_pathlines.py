@@ -150,50 +150,15 @@ assert same
 # ================================================================
 
 if _args.png:
-    import vtkmodules.vtkInteractionStyle
-    import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
-    from vtkmodules.vtkCommonCore import vtkLookupTable
-    from vtkmodules.vtkIOImage import vtkPNGWriter
-    from vtkmodules.vtkRenderingCore import (
-        vtkActor,
-        vtkPolyDataMapper,
-        vtkRenderer,
-        vtkRenderWindow,
-        vtkWindowToImageFilter,
-    )
+    import _scene
 
     speed = Magnitude(field=VELOCITY, name="speed", device=device)
     plane = SlicePlane(origin=(0.0, 0.0, 0.005), normal=(0.0, 0.0, 1.0), device=device)
     middle = (reader >> speed >> plane)().GetBlock(0)
     tubes = Tubes(radius=0.0006, sides=10, device=device)(traced).GetBlock(0)
-
-    def actor(data, color=None, array=None, value_range=None):
-        mapper = vtkPolyDataMapper(input_data_object=data, scalar_visibility=array is not None)
-        if array is not None:
-            mapper.SetScalarModeToUsePointFieldData()
-            mapper.SelectColorArray(array)
-            mapper.SetScalarRange(*value_range)
-            mapper.lookup_table = vtkLookupTable(hue_range=(0.667, 0.0))  # blue to red
-        out = vtkActor(mapper=mapper)
-        if color is not None:
-            out.property.color = color
-        return out
-
-    renderer = vtkRenderer(background=(0.12, 0.12, 0.16))
-    renderer.AddActor(actor(middle, array="speed", value_range=(0.0, 0.4)))
-    renderer.AddActor(actor(tubes, color=(0.95, 0.95, 0.95)))
-    dots = actor(paths, color=(0.95, 0.3, 0.2))
-    dots.property.point_size = 9
-    dots.property.render_points_as_spheres = True
-    dots.property.representation = 0            # points
-    renderer.AddActor(dots)
-    window = vtkRenderWindow(off_screen_rendering=True, size=(800, 800))
-    window.AddRenderer(renderer)
-    renderer.ResetCamera()
-    window.Render()
-    # A PNG writer called on its input writes raw pixels (VTK 9.7.1): connect it
-    # and Write().
-    png = vtkPNGWriter(file_name=_args.png)
-    vtkWindowToImageFilter(input=window) >> png
-    png.Write()
-    print(f"rendered {_args.png}")
+    way = _scene.render(_args.png, [
+        _scene.Layer(middle, array="speed", value_range=(0.0, 0.4)),
+        _scene.Layer(tubes, color=(0.95, 0.95, 0.95)),
+        _scene.Layer(paths, color=(0.95, 0.3, 0.2), point_size=9)],   # the steps' points
+        size=(800, 800))
+    print(f"rendered {_args.png} ({way})")

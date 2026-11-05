@@ -153,46 +153,12 @@ print(f"the disk and housing: {partitions(housing, 0)[0].number_of_cells} quadri
 # ================================================================
 
 if _args.png:
-    import vtkmodules.vtkInteractionStyle
-    import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
-    from vtkmodules.vtkCommonCore import vtkLookupTable
-    from vtkmodules.vtkIOImage import vtkPNGWriter
-    from vtkmodules.vtkRenderingCore import (
-        vtkActor,
-        vtkCompositePolyDataMapper,
-        vtkRenderer,
-        vtkRenderWindow,
-        vtkWindowToImageFilter,
-    )
-
-    def actor(data, array=None, value_range=None, color=None, opacity=1.0):
-        mapper = vtkCompositePolyDataMapper(input_data_object=data,
-                                            scalar_visibility=array is not None)
-        if array is not None:
-            mapper.SetScalarModeToUsePointFieldData()
-            mapper.SelectColorArray(array)
-            mapper.SetScalarRange(*value_range)
-            mapper.lookup_table = vtkLookupTable(hue_range=(0.667, 0.0))  # blue to red
-        out = vtkActor(mapper=mapper)
-        if color is not None:
-            out.property.color = color
-        out.property.opacity = opacity
-        return out
+    import _scene
 
     time = np.asarray(paths.point_data["time"])
-    renderer = vtkRenderer(background=(0.12, 0.12, 0.16))
-    renderer.AddActor(actor(tube_surface, "time", (0.0, float(time.max()))))
-    renderer.AddActor(actor(isosurface, color=(0.95, 0.55, 0.25), opacity=0.6))
-    renderer.AddActor(actor(housing, color=(0.8, 0.8, 0.85), opacity=0.15))
-    window = vtkRenderWindow(off_screen_rendering=True, size=(800, 900))
-    window.AddRenderer(renderer)
-    renderer.ResetCamera()
-    renderer.active_camera.Elevation(-70)
-    renderer.active_camera.Zoom(1.3)
-    window.Render()
-    # A PNG writer called on its input writes raw pixels (VTK 9.7.1): connect it
-    # and Write().
-    png = vtkPNGWriter(file_name=_args.png)
-    vtkWindowToImageFilter(input=window) >> png
-    png.Write()
-    print(f"rendered {_args.png}")
+    way = _scene.render(_args.png, [
+        _scene.Layer(tube_surface, array="time", value_range=(0.0, float(time.max()))),
+        _scene.Layer(isosurface, color=(0.95, 0.55, 0.25), opacity=0.6),
+        _scene.Layer(housing, color=(0.8, 0.8, 0.85), opacity=0.15)],
+        size=(800, 900), elevation=-70, zoom=1.3)
+    print(f"rendered {_args.png} ({way})")
