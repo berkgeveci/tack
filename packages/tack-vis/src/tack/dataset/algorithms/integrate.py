@@ -389,23 +389,37 @@ def integrate(data, fields=None):
         from tack.dataset.algorithms.statistics import _over_pieces
 
         pieces = list(data)
-        names = _names(pieces[0], fields) if pieces else []
-        if any(isinstance(field, Field) for _, field in names):
+        # Refused alike on every rank, a rank without pieces too: from the arguments.
+        given = (list(fields.values()) if hasattr(fields, "items") else
+                 [] if fields is None else
+                 [fields] if is_field_key(fields) or isinstance(fields, Field) else list(fields))
+        if any(isinstance(field, Field) for field in given):
             raise TypeError("integrate over a PartitionedDataSet takes fields by name or "
                             "as objects whose on(piece) gives the piece's: a Field belongs "
                             "to one partition's topology")
+        names = _names(pieces[0], fields) if pieces else None
+        # The names and the measure's unit as a rank with pieces finds them: a rank
+        # without any gets the same answer (the sums, and the fields' units, are every
+        # rank's).
+        mine = None if names is None else ([name for name, _ in names],
+                                           _measure_unit(pieces[0]))
+        labels, measure_unit = next((m for m in data.world._allgather(mine) if m is not None),
+                                    ([], None))
+        if names is None:
+            names = [(name, name) for name in labels]
         parts = _over_pieces(data, lambda piece: _piece(piece, names))
         measure = math.fsum(m for m, _, _ in parts)
-        values = {name: np.sum([v[name] for _, v, _ in parts], axis=0) for name, _ in names}
+        values = {name: np.sum([v[name] for _, v, _ in parts], axis=0) for name in labels}
         field_units = parts[0][2] if parts else {}
-        first = pieces[0] if pieces else None
+        out_units = {name: units.derived((field_units[name], 1), (measure_unit, 1))
+                     for name in labels}
     else:
         names = _names(data, fields)
         measure, values, field_units = _piece(data, names)
-        first = data
-    out_units = {name: units.derived((field_units[name], 1), (_measure_unit(first), 1))
-                 if first is not None else None for name, _ in names}
-    return Integrals(measure=measure, measure_unit=_measure_unit(first) if first else None,
+        measure_unit = _measure_unit(data)
+        out_units = {name: units.derived((field_units[name], 1), (measure_unit, 1))
+                     for name, _ in names}
+    return Integrals(measure=measure, measure_unit=measure_unit,
                      values={name: (float(v) if np.ndim(v) == 0 else tuple(map(float, v)))
                              for name, v in values.items()},
                      units=out_units)

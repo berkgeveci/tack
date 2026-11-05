@@ -876,9 +876,12 @@ def amr_ghost_cells(amr, layers, fields):
                                         tack.vec3(piece.dtype)) if need else None)
         arrays_by_kind.append(assembled)
         grown_boxes.append((i, level, k, piece, box, ext))
-    for name in names:
-        kind = _kind(pieces[0].fields[name])
-        fills[kind].run([arrays[name] for arrays in arrays_by_kind])
+    # Each field's kind, as a rank with boxes knows it: a rank without any runs the
+    # same fills, with nothing of its own to put in them.
+    mine = [_kind(pieces[0].fields[name]) for name in names] if pieces else None
+    kinds = next((k for k in amr.world._allgather(mine) if k is not None), [])
+    for i, kind in enumerate(kinds):
+        fills[kind].run([arrays[names[i]] for arrays in arrays_by_kind])
     if need:
         fills["points"].run(positions)
 
@@ -1069,7 +1072,8 @@ def average_down(amr, field):
     if not isinstance(amr, AMRDataSet):
         raise TypeError(f"average_down takes an AMRDataSet, not {type(amr).__name__}")
     boxes = [box for _, box in amr]
-    kinds = {_kind(box.fields[field]) for box in boxes}
+    # Every rank's boxes' say: a rank without boxes knows nothing of the field.
+    kinds = set().union(*amr.world._allgather({_kind(box.fields[field]) for box in boxes}))
     if len(kinds) != 1 or None in kinds:
         raise TypeError(f"average_down averages a point or cell field; {field!r} is not one")
     kind = kinds.pop()

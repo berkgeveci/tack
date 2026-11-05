@@ -212,6 +212,8 @@ def update_ghosts(data, *fields):
                          "ghost_points made, which keeps the exchanges")
     pieces = list(data)
     blocks = plans["points"].blocks
+    if not blocks.count:
+        return                              # no pieces anywhere: nothing to refresh
     by_kind = {"points": {g: {} for g in blocks.local}, "cells": {g: {} for g in blocks.local}}
     for name in fields:
         for g, piece in zip(blocks.local, pieces):
@@ -227,7 +229,9 @@ def update_ghosts(data, *fields):
                                 f"a {type(field.values).__name__}, not a Tack array")
             by_kind[kind][g][field_label(name)] = field.values
     for kind, values in by_kind.items():
-        if any(values.values()):
+        # Every rank's pieces' say, a rank without pieces too: it takes part in the
+        # exchange the others run.
+        if blocks.all_reduce({g: int(bool(values[g])) for g in blocks.local}, "max"):
             plans[kind].run(values)
 
 

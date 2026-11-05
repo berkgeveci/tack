@@ -2507,13 +2507,20 @@ class _Reduction(TackAlgorithm):
     def _selected(self, pieces):
         """``(label, where, key, component)`` for each value to reduce: the chosen fields
         (``fields``, or ``SetInputArrayToProcess``'s, or every field), a vector field's
-        components one by one (``component`` None for a scalar)."""
+        components one by one (``component`` None for a scalar). As a rank with pieces
+        finds them: a rank without any reduces the same values, with nothing of its
+        own (collective)."""
+        mine = self._selected_here(pieces)
+        return next((s for s in pieces.world._allgather(mine) if s is not None), [])
+
+    def _selected_here(self, pieces):
+        """``_selected`` from this rank's first piece; ``None`` without one."""
         import tack.dataset as td
         from tack.arrays import width_of
 
         first = next(iter(pieces), None)
         if first is None:
-            return []
+            return None
         chosen = self.fields
         if chosen is None:
             chosen = [a for a in map(self._input_array, range(self._arrays_set()))
@@ -2670,8 +2677,16 @@ class Integrate(_Reduction):
         selected = {}
         for name, where, key, _ in self._selected(pieces):
             selected.setdefault((name, where), key)
+        # The first piece's origin over every rank, and the widest cells: alike on a
+        # rank without pieces, which takes part with nothing.
         first = next(iter(pieces), None)
-        origin = np.asarray(first.origin if first is not None else (0.0, 0.0, 0.0), float)
+        found = pieces.world._allgather((
+            None if first is None else tuple(first.origin),
+            max((piece.topology.dimension for piece in pieces), default=0)))
+        origin = np.asarray(next((o for o, _ in found if o is not None), (0.0, 0.0, 0.0)),
+                            float)
+        dimension = max(d for _, d in found) or 3
+        names = [f"{where}:{name}" for name, where in selected] + ["__position__"]
         out = []
         for piece in pieces:
             fields = {f"{where}:{name}": piece.fields[key]
@@ -2689,7 +2704,7 @@ class Integrate(_Reduction):
                                   ghosts=piece.ghosts, global_ids=piece.global_ids,
                                   **piece._frame()))
         integrals = td.integrate(td.PartitionedDataSet(out, world=pieces.world),
-                                 fields=list(fields) if out else None)
+                                 fields=names)
         measure = integrals.measure
         centre = origin + (np.asarray(integrals.values["__position__"], float) / measure
                            if measure else 0.0)
@@ -2706,7 +2721,6 @@ class Integrate(_Reduction):
             array.SetName(name)
             (grid.GetPointData() if where == "points" else grid.GetCellData()).AddArray(array)
             _label(array, integrals.units.get(f"{where}:{name}"))
-        dimension = max((piece.topology.dimension for piece in pieces), default=3)
         total = vtkDoubleArray()
         total.InsertNextValue(measure)
         total.SetName({1: "Length", 2: "Area"}.get(dimension, "Volume"))

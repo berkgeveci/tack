@@ -332,13 +332,16 @@ def _every(flags, stride):
         flags[i] = 1 if i % stride == 0 else 0
 
 
-def _vertices(points, like=None):
+def _vertices(points, like=None, dtype=None, **frame):
     """Vertex cells at ``points`` (an ``(n, 3)`` host array or an array of 3-vectors),
-    with ``like``'s id type (or wider if needed), origin, spatial unit and time."""
+    with ``like``'s id type (or wider if needed), origin, spatial unit and time;
+    without ``like``, of ``dtype`` (f32 by default) in ``frame`` (``origin``,
+    ``unit``, ...)."""
     from tack.dataset.topology import UnstructuredTopology
 
     n = int(points.shape[0])
     idt = ids.for_output(like, n) if like is not None else ids.choose(None, n)
+    if dtype is None:
+        dtype = like.dtype if like is not None else tack.f32
     return DataSet(UnstructuredTopology(*_vertex_cells(n, idt), num_points=n), points,
-                   dtype=like.dtype if like is not None else tack.f32,
-                   **(like._frame() if like is not None else {}))
+                   dtype=dtype, **{**(like._frame() if like is not None else {}), **frame})

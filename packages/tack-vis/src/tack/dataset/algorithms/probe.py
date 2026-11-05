@@ -8,7 +8,7 @@ import numpy as np
 import tack
 from tack import arrays
 from tack.dataset import ids, units
-from tack.dataset.algorithms._common import _field
+from tack.dataset.algorithms._common import _field, _stand_in
 from tack.dataset.algorithms._extract import _vertices
 from tack.dataset.buckets import bucket_groups
 from tack.dataset.by_id import field_by_id
@@ -281,14 +281,28 @@ def _probe_pieces(data, where, fields, levels=None):
     for piece in data:                       # each piece's work on its own device
         with piece.device:
             pieces.append(visible(piece))
+    origin = common_origin(data, "probe of a PartitionedDataSet")
+    # What each piece gives back (its fields' names, element types and units, from
+    # a probe of no points) and the pieces' geometry, from a rank that has pieces:
+    # every rank needs them, one without pieces too, which probes through the
+    # others' and receives their answers.
+    mine = None
+    if pieces:
+        with pieces[0].device:
+            empty = probe(pieces[0], np.zeros((0, 3)), fields)
+        mine = [(n, f.values.dtype, f.unit) for n, f in empty.fields.items()]
+    given = next((m for m in data.world._allgather(mine) if m is not None), None)
+    # A rank with no pieces takes part through a piece of nothing: its block holds
+    # no point, and sends its targets to the pieces that do.
+    nothing = _stand_in(data, origin)
+    if nothing is not None:
+        pieces = [nothing]
+        if levels is not None:
+            levels = [0]
     blocks = tc.Blocks([piece.device for piece in pieces], data.world)
-    if not len(blocks.local):
-        raise ValueError("probe of a PartitionedDataSet needs pieces on this rank to "
-                         "start from")
 
     # This rank's targets, their points end to end, from its first block, relative
     # to the pieces' one origin.
-    origin = common_origin(data, "probe of a PartitionedDataSet")
     spatial = units.common("probe of a PartitionedDataSet's pieces' geometry",
                            [piece.unit for piece in pieces])
     many = isinstance(where, PartitionedDataSet)
@@ -336,12 +350,12 @@ def _probe_pieces(data, where, fields, levels=None):
     routing = tc.Routing(blocks, positions, boxes, holds)
     arrived = routing.send()
 
-    # What each piece gives back, and its element types, from a probe of no
-    # points (so a rank whose points went nowhere still knows them).
-    with pieces[0].device:
-        empty = probe(pieces[0], np.zeros((0, 3)), fields)
-    names = [n for n in empty.fields if n not in ("valid",)] + ["valid"]
-    like = {n: empty.fields[n].values.dtype for n in names}
+    # What each piece gives back (so a rank whose points went nowhere still knows
+    # it); with no pieces anywhere, only ``valid``.
+    found = {n: (dtype, unit) for n, dtype, unit in (given or [])}
+    found.setdefault("valid", (tack.i32, None))
+    names = [n for n in found if n != "valid"] + ["valid"]
+    like = {n: found[n][0] for n in names}
     answers = {}
     for g, piece in zip(blocks.local, pieces):
         x, _ = arrived[g]
@@ -359,7 +373,7 @@ def _probe_pieces(data, where, fields, levels=None):
         for name in names:
             values = gather(replied[name], rows).to_device(target.device)
             space = Values(target, "points") if name == "valid" else H1(target)
-            kept[name] = Field(space, values, empty.fields[name].unit)
+            kept[name] = Field(space, values, found[name][1])
         start += n
         out.append(keep_marks(target, DataSet(target.topology, target.geometry, fields=kept,
                                               sets=dict(target.sets))))

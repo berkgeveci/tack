@@ -564,7 +564,9 @@ def _surface_of_pieces(pds, fields):
 
     world = pds.world
     pieces = [visible(piece) for piece in pds]
-    if all(p.topology.dimension == 2 for p in pieces):
+    # Every rank's pieces' say: a rank without pieces must not take the shortcut
+    # while the others match faces.
+    if all(world._allgather(all(p.topology.dimension == 2 for p in pieces))):
         # A surface's pieces are their own surfaces, as one surface is.
         return PartitionedDataSet([extract_surface(p, fields=fields) for p in pieces],
                                   world=world)

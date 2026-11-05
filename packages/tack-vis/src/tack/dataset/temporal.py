@@ -368,8 +368,15 @@ def _kept_dataset(data, field, copy):
 
 
 def _frame_of(data):
-    """A dataset's, or the first piece's, ``_frame()`` and device."""
-    first = next(iter(data)) if isinstance(data, PartitionedDataSet) else data
+    """A dataset's, or the first piece's, ``_frame()`` and device; over pieces, on a rank
+    with none, the others' frame on the default device (``_stand_in``: collective)."""
+    if not isinstance(data, PartitionedDataSet):
+        return data._frame(), data.device
+    from tack.dataset.algorithms._common import _stand_in
+    from tack.dataset.partitioned import common_origin
+
+    nothing = _stand_in(data, common_origin(data, "advection over pieces"))
+    first = nothing if nothing is not None else next(iter(data))
     return first._frame(), first.device
 
 
