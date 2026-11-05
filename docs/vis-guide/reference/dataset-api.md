@@ -995,7 +995,9 @@ Every algorithm is in `tack.dataset.algorithms`, one module each, and
 what they do, with their parameters. They share one set of conventions:
 
 - the dataset comes first: `f(data, ...)`;
-- a field argument is a `Field` or the name of one of `data`'s fields;
+- a field argument is a `Field`, the name of one of `data`'s fields, or an
+  object whose `on(data)` gives the `Field` on `data` (a field expression's),
+  which over a `PartitionedDataSet` gives each piece's;
 - an algorithm that makes a new dataset takes `fields=` (all by default, a
   name, a list of names, or `[]` for none) and returns a `DataSet`;
 - an algorithm that computes a field returns a `Field`, and several fields a

@@ -140,12 +140,19 @@ def _same_space(*fields):
 
 
 def _field(data, field):
-    """A field by name or object, checked against the dataset before launch."""
+    """A field argument as the ``Field`` it is on ``data``, checked against the dataset
+    before launch: a ``Field``, a name, or an object whose ``on(data)`` gives the
+    ``Field`` on ``data`` (a field expression's), so that one argument means a field
+    in each piece of a ``PartitionedDataSet``."""
     from tack.dataset.dataset import Field, is_field_key
 
-    field = data.fields[field] if is_field_key(field) else field
+    if is_field_key(field):
+        field = data.fields[field]
+    elif not isinstance(field, Field) and callable(getattr(field, "on", None)):
+        field = field.on(data)
     if not isinstance(field, Field):
-        raise TypeError("a field argument is a tack.dataset.Field or its name")
+        raise TypeError("a field argument is a tack.dataset.Field, its name, or an object "
+                        "whose on(data) gives one")
     if field.space.topology is not data.topology:
         raise ValueError("a field argument belongs to another topology")
     return field
