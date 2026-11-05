@@ -270,8 +270,63 @@ state, so every step must bring the same pieces, and the output is pieces
 too. Over MPI ranks each rank feeds its own pieces. The statistics and
 derivatives need nothing from other ranks. `Advection` over pieces probes
 each point on the rank whose cells hold it, so particles stay on the rank
-that released them. [Filters over pieces](over-pieces.md) explains pieces
-and ranks.
+that released them. Every rank takes part in each probe, so a rank may hold
+no seeds at all. [Filters over pieces](over-pieces.md) explains pieces and
+ranks.
+
+## In a VTK pipeline
+
+`tack.interop.vtk.algorithms` has each of these filters as a VTK algorithm:
+`RunningStatistics`, `TimeDerivative`, `Advection`, `Pathlines` and
+`Streaklines`. Each works in one of two modes.
+
+- **In situ**, the filter cannot drive the pipeline. Each execution takes the
+  step its input holds and gives the output at that step, stamped with its
+  time: the statistics or the paths up to that step, the particles at it. An
+  execution at the time of the step it took last gives the same output again
+  without taking the step twice. A step back in time, a changed parameter, or
+  VTK's reset signal starts the filter over.
+- **Driving**, the filter asks its input for the steps it needs, one per pass,
+  and never asks again for a step it has taken. `RunningStatistics`,
+  `Advection` and `Pathlines` take every step (or those in `time_range`) and
+  give one output after the last, with no time on it. The time is in the
+  data: the paths' `time` on their points, and for `Advection` the particles
+  at every step in one cloud, with `step` and `time` on the points.
+  `Streaklines` and `TimeDerivative` give their answer at the time requested
+  of them, stamped with it. They go on from the steps they have taken, and a
+  request for an earlier time starts them over.
+
+A filter drives where its input has time steps, unless VTK's
+`NO_PRIOR_TEMPORAL_ACCESS` key says the pipeline cannot go back in time, as
+an in situ adaptor sets it. `mode="in situ"` or `mode="driving"` chooses
+either. Driving to a step gives what the same steps give in situ.
+
+<!-- tack-check: over-time-vtk -->
+```python
+from vtkmodules.vtkFiltersGeneral import vtkTimeSourceExample
+
+import tack
+from tack.interop.vtk.algorithms import RunningStatistics
+
+tack.set_default_device("cpu")
+
+# Driving: the filter runs the source through its ten steps itself.
+source = vtkTimeSourceExample()
+stats = RunningStatistics(fields=["Point Value"])
+stats.SetInputConnection(source.GetOutputPort())
+stats.Update()
+over_all = stats.GetOutputDataObject(0)
+assert over_all.GetFieldData().GetArray("count").GetValue(0) == 10
+
+# In situ: each step is handed to the filter, which gives the statistics so far.
+live = RunningStatistics(fields=["Point Value"], mode="in situ")
+for step in range(3):
+    source.UpdateTimeStep(step / 9)
+    live.SetInputDataObject(0, source.GetOutputDataObject(0))
+    live.Update()
+so_far = live.GetOutputDataObject(0)
+assert so_far.GetFieldData().GetArray("count").GetValue(0) == 3
+```
 
 ## Details
 

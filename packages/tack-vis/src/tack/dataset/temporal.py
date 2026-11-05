@@ -372,12 +372,15 @@ def _frame_of(data):
 
 def _velocities(data, field, x):
     """The velocity at world points ``x`` (``(n, 3)`` f64) and whether a cell holds
-    each: ``probe``, over pieces routed to the rank whose cells hold them."""
+    each: ``probe``, over pieces routed to the rank whose cells hold them. Over
+    pieces the probe is collective, so a rank with no points probes too."""
     from tack.dataset.algorithms.probe import probe
 
-    if not len(x):
+    if not len(x) and not isinstance(data, PartitionedDataSet):
         return np.zeros((0, 3)), np.zeros(0, bool)
     out = probe(data, x, fields=[field])
+    if not len(x):
+        return np.zeros((0, 3)), np.zeros(0, bool)
     values = np.asarray(out.fields[field].values.numpy(), np.float64).reshape(len(x), -1)
     return values, out.fields["valid"].values.numpy() == 1
 
@@ -471,7 +474,7 @@ class Advection:
 
     def _release(self, data, t1):
         """Particles pending with a release time at or before ``t1``."""
-        keep = []
+        keep, due = [], []
         for points, time, sources in self._pending:
             time = (self._last if self._last is not None else t1) if time is None else time
             if time > t1:
@@ -480,15 +483,30 @@ class Advection:
             if self._last is None and time < t1:
                 raise ValueError(f"particles released at {time}, before the first step's "
                                  f"time {t1}")
+            due.append((points, time, sources))
+        # Released outside any cell: SUCCESS cleared, as advect's seeds. Those
+        # released before t1 are probed on the previous step, the rest on this one,
+        # each group at once: over pieces every rank probes both, its points or none,
+        # since the probe is collective (a rank with fewer releases waited forever).
+        earlier = [self._previous is not None and time < t1 for _, time, _ in due]
+        inside = [None] * len(due)
+        for where, which in ((self._previous, True), (data, False)):
+            group = [i for i, e in enumerate(earlier) if e == which]
+            if where is None or not (group or isinstance(data, PartitionedDataSet)):
+                continue
+            points = np.concatenate([due[i][0] for i in group]) if group else \
+                np.zeros((0, 3))
+            _, found = _velocities(where, self.field, points)
+            for i, part in zip(group, np.split(found, np.cumsum(
+                    [len(due[i][0]) for i in group])[:-1]) if group else []):
+                inside[i] = part
+        for (points, time, sources), found in zip(due, inside):
             n = len(points)
             ids = self._released + np.arange(n, dtype=np.int64)
             if isinstance(data, PartitionedDataSet):
                 ids += np.int64(data.world.rank) << np.int64(40)
             self._released += n
-            # Released outside any cell: SUCCESS cleared, as advect's seeds.
-            where = self._previous if self._previous is not None and time < t1 else data
-            _, inside = _velocities(where, self.field, points)
-            status = np.where(inside, 1, 0).astype(np.int32)
+            status = np.where(found, 1, 0).astype(np.int32)
             for name, values in (("x", points), ("time", np.full(n, time)),
                                  ("release", np.full(n, time)), ("seed", ids),
                                  ("source", sources), ("status", status)):
@@ -518,10 +536,14 @@ class Advection:
             return (1.0 - a) * v0 + a * v1, in0 & in1
 
         limit = self.step_size if self.step_size is not None else span
+        # Over pieces every rank takes each substep, moving particles or not, until
+        # none moves on any: the probes are collective.
+        world = now.world if isinstance(now, PartitionedDataSet) else None
         while True:
             moving = np.flatnonzero(((self.status & 1) != 0) & ((self.status & 2) == 0)
                                     & (self.time < t1 - 1e-12 * max(abs(t1), 1.0)))
-            if not len(moving):
+            if not (len(moving) if world is None
+                    else any(world._allgather(bool(len(moving))))):
                 break
             x, t = self.x[moving], self.time[moving]
             h = np.minimum(limit, t1 - t)

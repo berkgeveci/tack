@@ -512,13 +512,24 @@ def _swirl(x, t):
     return v
 
 
-def advect_across(world):
+def advect_across(world, uneven=False):
     """This rank's particles (its own seeds) advected through steps whose pieces are
-    shared out over ``world``'s ranks, and the same seeds through the whole steps."""
+    shared out over ``world``'s ranks, and the same seeds through the whole steps.
+    ``uneven``: every seed on rank 0, one leaving the mesh, and a release on the
+    last rank alone, so ranks have no particles, stop at other substeps and
+    release at other steps, while the probes are collective."""
     seeds = np.array([[7.0, 5.0, 1.0], [5.0, 3.5, 1.0], [4.0, 6.0, 1.0],
-                      [6.0, 6.5, 1.0]])[world.rank::world.size]
+                      [6.0, 6.5, 1.0]])
+    if uneven:
+        seeds = np.concatenate([seeds, [[9.6, 5.0, 1.0]]]) if world.rank == 0 else \
+            np.zeros((0, 3))
+    else:
+        seeds = seeds[world.rank::world.size]
     shared, whole = td.Advection("v", seeds, step_size=0.1), td.Advection("v", seeds,
                                                                            step_size=0.1)
+    if uneven and world.rank == world.size - 1:
+        for advection in (shared, whole):
+            advection.inject([[5.0, 5.0, 1.0]], time=0.25)
     for t in (0.0, 0.5, 1.0):
         step = _flow(t, _swirl)
         pieces = list(td.split(step, (2, 2, 1)))[world.rank::world.size]

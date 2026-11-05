@@ -18,10 +18,11 @@ from tack import communication as tc
 
 def main():
     comm = MPI.COMM_WORLD
-    got, want = case.advect_across(tc.World(comm))
-    np.testing.assert_allclose(got.world_positions(), want.world_positions(), atol=1e-5)
-    np.testing.assert_array_equal(got.fields["status"].values.numpy(),
-                                  want.fields["status"].values.numpy())
+    for uneven in (False, True):
+        got, want = case.advect_across(tc.World(comm), uneven)
+        np.testing.assert_allclose(got.world_positions(), want.world_positions(), atol=1e-5)
+        np.testing.assert_array_equal(got.fields["status"].values.numpy(),
+                                      want.fields["status"].values.numpy())
     done = comm.gather(True, root=0)
     if comm.rank == 0 and all(done):
         print(f"ok: {comm.size} ranks", flush=True)

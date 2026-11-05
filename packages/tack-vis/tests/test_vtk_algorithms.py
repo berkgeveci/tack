@@ -1417,3 +1417,264 @@ def test_an_amr_filter_runs_on_the_device_it_is_given():
     assert all(box.device == other for _, box in ta._as_dataset(amr, other))
     assert table.GetColumnByName("mean").GetValue(0) == pytest.approx(
         once.GetColumnByName("mean").GetValue(0), rel=1e-12)
+
+
+# ── Temporal filters: in situ and driving ───────────────────────────
+
+TIMES = (0.0, 0.5, 1.0, 1.5, 2.0)
+
+
+def _flow_step(t):
+    """A step at ``t``: a grid with a velocity ``v`` turning with time and a scalar
+    ``T`` growing with it."""
+    grid = td.uniform_grid((11, 11, 3))
+    grid.time = t
+    x = grid.positions().astype(np.float64)
+    v = np.zeros_like(x)
+    v[:, 0], v[:, 1] = 1.0, 0.2 * t
+    grid.fields["v"] = td.Field(td.H1(grid), tack.array(v.astype(np.float32), tack.vec3()))
+    grid.fields["T"] = td.Field(td.H1(grid), tack.array((x[:, 0] * (1.0 + t) ** 2)
+                                                      .astype(np.float32)))
+    return grid
+
+
+def _pipeline_keys():
+    from vtkmodules.vtkCommonExecutionModel import vtkStreamingDemandDrivenPipeline
+
+    return vtkStreamingDemandDrivenPipeline
+
+
+def _steps_source(times=TIMES, no_prior_access=None):
+    """A source of ``_flow_step``s at ``times`` that records each time it is asked
+    for (``asked``); with ``no_prior_access``, it says so as an in situ adaptor does
+    (``NO_PRIOR_TEMPORAL_ACCESS``, that value)."""
+    from vtkmodules.util.vtkAlgorithm import VTKPythonAlgorithmBase
+
+    s = _pipeline_keys()
+
+    class Steps(VTKPythonAlgorithmBase):
+        def __init__(self):
+            VTKPythonAlgorithmBase.__init__(self, nInputPorts=0, nOutputPorts=1,
+                                            outputType="vtkImageData")
+            self.asked = []
+            self.no_prior_access = no_prior_access
+
+        def RequestInformation(self, request, inInfo, outInfo):
+            info = outInfo.GetInformationObject(0)
+            info.Set(s.TIME_STEPS(), list(times), len(times))
+            info.Set(s.TIME_RANGE(), [times[0], times[-1]], 2)
+            info.Set(s.WHOLE_EXTENT(), [0, 10, 0, 10, 0, 2], 6)
+            if self.no_prior_access is not None:
+                info.Set(s.NO_PRIOR_TEMPORAL_ACCESS(), self.no_prior_access)
+            return 1
+
+        def RequestData(self, request, inInfo, outInfo):
+            info = outInfo.GetInformationObject(0)
+            t = info.Get(s.UPDATE_TIME_STEP()) if info.Has(s.UPDATE_TIME_STEP()) else times[0]
+            self.asked.append(t)
+            out = self.GetOutputData(outInfo, 0)
+            out.ShallowCopy(dataset_to_vtk(_flow_step(t)))
+            out.GetInformation().Set(vtk.vtkDataObject.DATA_TIME_STEP(), t)
+            return 1
+
+    return Steps()
+
+
+def _in_situ(make, times=TIMES):
+    """``make()``'s output after each step handed to it in turn, as in situ."""
+    algorithm, outputs = make(), []
+    for t in times:
+        algorithm.SetInputDataObject(0, dataset_to_vtk(_flow_step(t)))
+        algorithm.Update()
+        assert algorithm.error is None, algorithm.error
+        out = algorithm.GetOutputDataObject(0)
+        copy = out.NewInstance()
+        copy.DeepCopy(out)
+        copy.GetInformation().Set(vtk.vtkDataObject.DATA_TIME_STEP(),
+                                  out.GetInformation().Get(vtk.vtkDataObject.DATA_TIME_STEP()))
+        outputs.append(copy)
+    return outputs
+
+
+def _driven(make, source):
+    algorithm = make()
+    algorithm.SetInputConnection(0, source.GetOutputPort())
+    return algorithm
+
+
+def _time_of(data):
+    info = data.GetInformation()
+    key = vtk.vtkDataObject.DATA_TIME_STEP()
+    return info.Get(key) if info.Has(key) else None
+
+
+def _same_arrays(a, b, names):
+    for name in names:
+        np.testing.assert_array_equal(np.asarray(a.point_data[name]),
+                                      np.asarray(b.point_data[name]), err_msg=name)
+
+
+def test_running_statistics_driving_take_every_step_once_and_give_no_time():
+    """Driving gives what the steps give in situ after the last, at no time, its output
+    reporting no time steps; asked again (an update, another time requested) it runs
+    nothing again."""
+    make = lambda: ta.RunningStatistics(fields=["T"])
+    source = _steps_source()
+    stats = _driven(make, source)
+    stats.Update()
+    assert stats.error is None, stats.error
+    out = stats.GetOutputDataObject(0)
+    assert source.asked == list(TIMES)
+    assert _time_of(out) is None
+    s = _pipeline_keys()
+    assert not stats.GetOutputInformation(0).Has(s.TIME_STEPS())
+    assert out.GetFieldData().GetArray("count").GetValue(0) == len(TIMES)
+    assert sorted(out.point_data.keys()) == ["T_max", "T_mean", "T_min", "T_variance"]
+    last = _in_situ(make)[-1]
+    assert _time_of(last) == TIMES[-1]
+    _same_arrays(out, last, ["T_mean", "T_variance", "T_min", "T_max"])
+    expected = np.mean([_flow_step(t).fields["T"].values.numpy() for t in TIMES], axis=0)
+    np.testing.assert_allclose(np.asarray(out.point_data["T_mean"]), expected, rtol=1e-6)
+    stats.Update()
+    stats.UpdateTimeStep(1.0)
+    assert source.asked == list(TIMES)
+    stats.time_range = (0.5, 1.5)                   # a parameter: starts over
+    stats.Update()
+    assert source.asked == [*TIMES, 0.5, 1.0, 1.5]
+    assert stats.GetOutputDataObject(0).GetFieldData().GetArray("count").GetValue(0) == 3
+
+
+@pytest.mark.parametrize("make", [
+    lambda: ta.Pathlines(field="v", seeds=[[1.0, 5.0, 1.0], [2.0, 2.0, 1.0]]),
+    lambda: ta.Advection(field="v", seeds=[[1.0, 5.0, 1.0], [2.0, 2.0, 1.0]])])
+def test_particles_driving_hold_every_step_and_in_situ_the_steps_so_far(make):
+    """Driving: pathlines through every step; advection's particles at every step in
+    one cloud, ``step`` beside ``time``. They are what the same steps give in situ."""
+    source = _steps_source()
+    driven = _driven(make, source)
+    driven.Update()
+    assert driven.error is None, driven.error
+    out = driven.GetOutputDataObject(0)
+    assert source.asked == list(TIMES) and _time_of(out) is None
+    in_situ = _in_situ(make)
+    if isinstance(driven, ta.Pathlines):
+        last = in_situ[-1]
+        np.testing.assert_array_equal(np.asarray(out.points.data), np.asarray(last.points.data))
+        assert out.number_of_cells == 2
+        return
+    steps = np.asarray(out.point_data["step"])
+    assert out.number_of_points == sum(o.number_of_points for o in in_situ)
+    for k, step in enumerate(in_situ):
+        at = steps == k
+        np.testing.assert_array_equal(np.asarray(out.points.data)[at],
+                                      np.asarray(step.points.data))
+        np.testing.assert_array_equal(np.asarray(out.point_data["time"])[at],
+                                      np.full(step.number_of_points, TIMES[k]))
+        assert _time_of(step) == TIMES[k]
+
+
+def test_streaklines_drive_to_the_time_requested_from_the_steps_taken():
+    """At the time requested, stamped with it, as in situ after those steps; a later
+    time takes only the steps after; an earlier one starts over; the same one
+    takes none."""
+    make = lambda: ta.Streaklines(field="v", seeds=[[1.0, 5.0, 1.0]], releases=2)
+    source = _steps_source()
+    streaks = _driven(make, source)
+    streaks.UpdateTimeStep(1.0)
+    assert streaks.error is None, streaks.error
+    assert source.asked == [0.0, 0.5, 1.0]
+    out = streaks.GetOutputDataObject(0)
+    assert _time_of(out) == 1.0
+    in_situ = _in_situ(make)
+    np.testing.assert_array_equal(np.asarray(out.points.data),
+                                  np.asarray(in_situ[2].points.data))
+    streaks.UpdateTimeStep(2.0)
+    assert source.asked == [0.0, 0.5, 1.0, 1.5, 2.0]
+    np.testing.assert_array_equal(np.asarray(streaks.GetOutputDataObject(0).points.data),
+                                  np.asarray(in_situ[4].points.data))
+    streaks.UpdateTimeStep(0.5)
+    assert source.asked[5:] == [0.0, 0.5]
+    streaks.UpdateTimeStep(0.5)
+    assert len(source.asked) == 7
+
+
+def test_a_time_derivative_takes_the_step_before_once():
+    source = _steps_source()
+    rate = _driven(lambda: ta.TimeDerivative(fields=["T"]), source)
+    rate.UpdateTimeStep(1.0)
+    assert rate.error is None, rate.error
+    assert source.asked == [0.5, 1.0]
+    out = rate.GetOutputDataObject(0)
+    assert _time_of(out) == 1.0 and "T" in out.point_data.keys()
+    t = lambda time: _flow_step(time).fields["T"].values.numpy()
+    np.testing.assert_allclose(np.asarray(out.point_data["T_dt"]), (t(1.0) - t(0.5)) / 0.5,
+                               rtol=1e-5, atol=1e-5)
+    rate.UpdateTimeStep(1.5)
+    assert source.asked == [0.5, 1.0, 1.5]
+    rate.UpdateTimeStep(0.0)                       # no step before: no rate
+    assert source.asked[3:] == [0.0]
+    assert "T_dt" not in rate.GetOutputDataObject(0).point_data.keys()
+    in_situ = _in_situ(lambda: ta.TimeDerivative(fields=["T"]))
+    assert "T_dt" not in in_situ[0].point_data.keys()
+    rate.UpdateTimeStep(2.0)
+    _same_arrays(rate.GetOutputDataObject(0), in_situ[4], ["T_dt"])
+
+
+def test_in_situ_a_step_is_taken_once_and_going_back_or_a_parameter_starts_over():
+    stats = ta.RunningStatistics(fields=["T"])
+    count = lambda: stats.GetOutputDataObject(0).GetFieldData().GetArray("count").GetValue(0)
+    for t in (0.0, 0.5, 0.5):                     # the same step again: not taken
+        stats.SetInputDataObject(0, dataset_to_vtk(_flow_step(t)))
+        stats.Update()
+    assert stats.error is None and count() == 2
+    assert _time_of(stats.GetOutputDataObject(0)) == 0.5
+    stats.SetInputDataObject(0, dataset_to_vtk(_flow_step(0.0)))
+    stats.Update()
+    assert count() == 1                            # back in time: started over
+    stats.SetInputDataObject(0, dataset_to_vtk(_flow_step(0.5)))
+    stats.Update()
+    assert count() == 2
+    stats.fields = [("T", "points")]
+    stats.SetInputDataObject(0, dataset_to_vtk(_flow_step(1.0)))
+    stats.Update()
+    assert count() == 1                            # a parameter changed
+
+
+def test_an_in_situ_adaptor_keeps_a_filter_from_driving():
+    """With VTK's NO_PRIOR_TEMPORAL_ACCESS on its input a filter takes the step it is
+    given, as does mode='in situ' anywhere; RESET starts it over."""
+    s = _pipeline_keys()
+    source = _steps_source(no_prior_access=s.NO_PRIOR_TEMPORAL_ACCESS_CONTINUE)
+    stats = _driven(lambda: ta.RunningStatistics(fields=["T"]), source)
+    for t in (0.0, 0.5, 1.0):
+        stats.UpdateTimeStep(t)
+    assert stats.error is None, stats.error
+    assert source.asked == [0.0, 0.5, 1.0]
+    out = stats.GetOutputDataObject(0)
+    assert out.GetFieldData().GetArray("count").GetValue(0) == 3 and _time_of(out) == 1.0
+    source.no_prior_access = s.NO_PRIOR_TEMPORAL_ACCESS_RESET
+    source.Modified()
+    stats.UpdateTimeStep(1.5)
+    assert stats.GetOutputDataObject(0).GetFieldData().GetArray("count").GetValue(0) == 1
+    plain = _steps_source()
+    forced = _driven(lambda: ta.RunningStatistics(fields=["T"], mode="in situ"), plain)
+    forced.UpdateTimeStep(1.0)
+    assert plain.asked == [1.0]
+
+
+def test_seeds_on_port_1_and_trees_refused():
+    seeds = vtk.vtkPolyData()
+    seeds.points = vtk.vtkPoints(data=np.array([[1.0, 5.0, 1.0]]))
+    source = _steps_source()
+    paths = ta.Pathlines(field="v")
+    paths.SetInputConnection(0, source.GetOutputPort())
+    paths.SetSourceData(seeds)
+    paths.Update()
+    assert paths.error is None, paths.error
+    assert paths.GetOutputDataObject(0).number_of_cells == 1
+    tree = vtk.vtkMultiBlockDataSet()
+    tree.SetNumberOfBlocks(1)
+    tree.SetBlock(0, dataset_to_vtk(_flow_step(0.0)))
+    stats = ta.RunningStatistics(fields=["T"])
+    stats.SetInputDataObject(0, tree)
+    assert stats.Update() == 0 and isinstance(stats.error, TypeError)
