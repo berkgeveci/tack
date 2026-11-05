@@ -1005,6 +1005,46 @@ def test_outputs_keep_the_inputs_active_attributes_as_vtks_filters_do():
     assert _active(ta.SurfaceNormals()(vtk.vtkSphereSource()()))["Normals"] == "normals"
 
 
+# ── A component of a vector field ───────────────────────────────────
+
+def test_contour_and_threshold_take_a_component_as_vtks_filters():
+    """A vector field's component (a view of it, nothing copied), as VTK's
+    ``ArrayComponent`` and ``vtkThreshold``'s selected component (its count of
+    components meaning the magnitude): the cells VTK's give."""
+    gradients = vtk.vtkGradientFilter()
+    gradients.SetInputData(_wavelet((-6, 6, -6, 6, -6, 6))())
+    gradients.SetInputArrayToProcess(0, 0, 0, 0, "RTData")
+    gradients.Update()
+    data = gradients.GetOutput()
+    values = np.asarray(data.point_data["Gradients"])
+    for c in (0, 1, 2):
+        theirs = vtk.vtkContourFilter()
+        theirs.SetInputData(data)
+        theirs.SetInputArrayToProcess(0, 0, 0, 0, "Gradients")
+        theirs.SetArrayComponent(c)
+        theirs.SetValue(0, 2.0)
+        theirs.Update()
+        ours = ta.Contour(field="Gradients", component=c, value=2.0)(data)
+        assert ours.number_of_cells == theirs.GetOutput().number_of_cells > 0
+    for c in (0, 2, "magnitude"):
+        v = np.linalg.norm(values, axis=1) if c == "magnitude" else values[:, c]
+        lo, hi = np.percentile(v, [30, 80])
+        theirs = vtk.vtkThreshold(lower_threshold=lo, upper_threshold=hi)
+        theirs.SetInputData(data)
+        theirs.SetInputArrayToProcess(0, 0, 0, 0, "Gradients")
+        theirs.SetComponentModeToUseSelected()
+        theirs.SetSelectedComponent(3 if c == "magnitude" else c)
+        theirs.Update()
+        ours = ta.Threshold(field="Gradients", component=c, lower=lo, upper=hi)(data)
+        assert ours.number_of_cells == theirs.GetOutput().number_of_cells > 0
+    first = ta.Contour(field="Gradients", value=2.0)(data)          # the first by default
+    assert first.number_of_cells == ta.Contour(field="Gradients", component=0,
+                                               value=2.0)(data).number_of_cells
+    wrong = ta.Contour(field="RTData", component=1, value=150.0)
+    wrong.SetInputDataObject(0, data)
+    assert wrong.Update() == 0 and "scalar field" in str(wrong.error)
+
+
 # ── Higher-order cells: fields at VTK's nodes ───────────────────────
 
 def _quadratic_quads():

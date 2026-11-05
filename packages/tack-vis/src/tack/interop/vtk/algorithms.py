@@ -1184,9 +1184,45 @@ class _Whole(TackAlgorithm):
 
 # ── Filters that make a dataset ─────────────────────────────────────
 
-class Contour(TackAlgorithm):
+def _component_of(data, key, component):
+    """The field ``key`` of ``data``, or of a vector field one component, as VTK's
+    filters take one: ``component`` (by default the first), or ``"magnitude"``. A
+    component is a view of the vector's values (``ExtractComponent``), nothing
+    copied."""
+    from tack.arrays import ExtractComponent, width_of
+    from tack.dataset import Field, magnitude
+
+    field = data.fields[key]
+    width = width_of(field.values)
+    if not width:
+        if component not in (None, 0):
+            raise ValueError(f"{key!r} is a scalar field: it has no component {component!r}")
+        return key
+    if component == "magnitude":
+        return magnitude(data, key)
+    c = 0 if component is None else int(component)
+    if not 0 <= c < width:
+        raise ValueError(f"{key!r} has {width} components, not a component {c}")
+    return Field(field.space, ExtractComponent(field.values, c), field.unit)
+
+
+class _OfAComponent(TackAlgorithm):
+    """A filter of a scalar ``field`` that takes a vector field's component, as VTK's
+    do (a vector field's first by default)."""
+
+    component = Parameter(None, "a vector field's component (by default the first), or "
+                                "'magnitude'")
+
+    def compute(self, data):
+        arguments = self.arguments()
+        arguments["field"] = _component_of(data, arguments["field"], self.component)
+        return self._function()(data, **arguments)
+
+
+class Contour(_OfAComponent):
     """``td.contour``: the isosurface (isolines in 2D) of a point field at ``value`` (a
-    number or a sequence of them). VTK's ``vtkContourFilter``."""
+    number or a sequence of them); of a vector field, its ``component`` (the first
+    by default, as VTK's ``ArrayComponent``). VTK's ``vtkContourFilter``."""
 
     FUNCTION = "contour"
     FIELDS = ("field",)
@@ -1219,9 +1255,11 @@ class Clip(TackAlgorithm):
     inside = Parameter(False, "keep the part below the value instead")
 
 
-class Threshold(TackAlgorithm):
+class Threshold(_OfAComponent):
     """``td.threshold``: the cells whose ``field`` lies in ``[lower, upper]`` (a point
-    field at all of a cell's points, or any with ``all_points=False``). VTK's
+    field at all of a cell's points, or any with ``all_points=False``); of a vector
+    field, its ``component`` (the first by default) or its magnitude
+    (``component="magnitude"``), as VTK's selected-component mode. VTK's
     ``vtkThreshold``."""
 
     FUNCTION = "threshold"
