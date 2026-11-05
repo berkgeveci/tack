@@ -180,45 +180,110 @@ communicator): `Contour(field="p", value=0.5, merge_points=False)`.
 Every algorithm of the [reference](../vis-guide/reference/algorithms.md) has
 one, named as the Tack function in CamelCase, but for the finite-volume
 operators that take values on faces (`net_flux`, `divergence`, `perot`), which
-VTK keeps nowhere. "Fields" means the input's
-type, shallow-copied, with the new arrays added; "faces" means every face as a
-polygon (a 2D mesh's edges as lines), or every edge as a line, the new values
-their cell data.
+VTK keeps nowhere. Each is listed below with VTK's filter that does the same
+work, where VTK has one; the docstrings say how they differ. "Fields" means the
+input's type, shallow-copied, with the new arrays added; "faces" means every
+face as a polygon (a 2D mesh's edges as lines), or every edge as a line, the
+new values their cell data.
 
-| Group | Algorithms | Output |
-|---|---|---|
-| Cells kept whole | `Threshold`, `ExtractCells`, `ExtractGeometry`, `Mask` | `vtkUnstructuredGrid` |
-| | `ExtractExtent` | the input's structure |
-| Cutting | `Contour`, `Slice`, `SlicePlane` | `vtkPolyData` |
-| | `Clip` | `vtkUnstructuredGrid`; `vtkPolyData` for a `vtkPolyData` input |
-| Surfaces and edges | `ExtractSurface`, `BoundaryFaces`, `ExtractEdges`, `FeatureEdges`, `SurfaceNormals` | `vtkPolyData` |
-| Shapes for drawing | `Tubes`, `Glyphs` | `vtkPolyData` |
-| Connectivity and winding | `ConnectedComponents` | the input's type, with `region` arrays |
-| | `CheckWinding` | fields: `inconsistent` on the cells |
-| | `MergePoints` | `vtkUnstructuredGrid`; `vtkPolyData` for a `vtkPolyData` input |
-| Changing cell types | `Tetrahedralize`, `AsPolyhedra`, `Shrink`, `Subdivide` | `vtkUnstructuredGrid` |
-| | `Triangulate`, `AsPolygons` | `vtkPolyData` |
-| Moving the geometry | `Transform` | the input's structure (an image stays an image) |
-| | `Warp`, `Cylindrical`, `Spherical` | a structured grid for a structured input, `vtkPolyData` for a `vtkPolyData`, else `vtkUnstructuredGrid` |
-| Measures and quality | `CellGeometry`, `CellCenters`, `CellQuality`, `Elevation`, `ImplicitValues`, `CellIds`, `PointIds` | fields |
-| | `FaceGeometry`, `FaceCenters`, `EdgeLengths` | faces (edges) |
-| Fields from fields | `Gradients`, `FlowQuantities`, `Project`, `ValuesAtCenters`, `Interpolate`, `Magnitude`, `Dot`, `Cross`, `Composite`, `LogValues` | fields |
-| | `Convert` | the input's structure |
-| Finite volumes | `Jump`, `UpwindFlux` | faces |
-| Summaries | `Statistics`, `Entropy` | `vtkTable`, a row per field (and component) |
-| | `Integrate` | `vtkUnstructuredGrid` of one vertex, as `vtkIntegrateAttributes` |
-| Probing, sampling and particles | `Probe` (the source on port 1), `SphInterpolate` (the particles on port 1) | the input's structure, with the source's fields |
-| | `Voxelize` | `vtkImageData` (the `grid` parameter's) |
-| | `Streamlines`, `Advect` (seeds on port 1, or `seeds=`) | `vtkPolyData` |
-| Point clouds | `ExtractPoints`, `ThresholdPoints`, `MaskPoints`, `Outliers`, `VoxelDownsample`, `HaloCatalog` | `vtkPolyData` |
-| | `PointNormals`, `SphDensity` | fields |
-| | `Deposit` | `vtkImageData` (the `grid` parameter's) |
-| Pieces and ghosts | `GhostCells`, `GenerateGlobalIds`, `MergePieces`, `GhostPoints` | over every piece of a `vtkPartitionedDataSet` |
-| | `Split` | a `vtkPartitionedDataSet` |
-| | `RemoveGhosts` | the input's structure |
-| AMR hierarchies | `AverageDown` | `vtkOverlappingAMR` |
-| Over time | `RunningStatistics`, `TimeDerivative` | fields, over the steps |
-| | `Advection`, `Pathlines`, `Streaklines` (seeds on port 1, or `seeds=`) | `vtkPolyData` |
+| Group | Algorithm | VTK's | Output |
+|---|---|---|---|
+| Cells kept whole | `Threshold` | `vtkThreshold` | `vtkUnstructuredGrid` |
+|  | `ExtractCells` | `vtkExtractCells` | `vtkUnstructuredGrid` |
+|  | `ExtractGeometry` | `vtkExtractGeometry` | `vtkUnstructuredGrid` |
+|  | `Mask` | — | `vtkUnstructuredGrid` |
+|  | `ExtractExtent` | `vtkExtractGrid` | the input's structure |
+| Cutting | `Contour` | `vtkContourFilter` | `vtkPolyData` |
+|  | `Slice` | `vtkCutter` | `vtkPolyData` |
+|  | `SlicePlane` | `vtkCutter` | `vtkPolyData` |
+|  | `Clip` | `vtkTableBasedClipDataSet` | `vtkUnstructuredGrid`; `vtkPolyData` for a `vtkPolyData` input |
+| Surfaces and edges | `ExtractSurface` | `vtkDataSetSurfaceFilter` | `vtkPolyData` |
+|  | `BoundaryFaces` | — | `vtkPolyData` |
+|  | `ExtractEdges` | `vtkExtractEdges` | `vtkPolyData` |
+|  | `FeatureEdges` | `vtkFeatureEdges` | `vtkPolyData` |
+|  | `SurfaceNormals` | `vtkPolyDataNormals` | `vtkPolyData` |
+| Shapes for drawing | `Tubes` | `vtkTubeFilter` | `vtkPolyData` |
+|  | `Glyphs` | `vtkGlyph3D` | `vtkPolyData` |
+| Connectivity and winding | `ConnectedComponents` | `vtkConnectivityFilter`, `vtkEuclideanClusterExtraction` | the input's type, with `region` arrays |
+|  | `CheckWinding` | — | fields: `inconsistent` on the cells |
+|  | `MergePoints` | `vtkStaticCleanUnstructuredGrid` | `vtkUnstructuredGrid`; `vtkPolyData` for a `vtkPolyData` input |
+| Changing cell types | `Tetrahedralize` | `vtkDataSetTriangleFilter` | `vtkUnstructuredGrid` |
+|  | `AsPolyhedra` | — | `vtkUnstructuredGrid` |
+|  | `Shrink` | `vtkShrinkFilter` | `vtkUnstructuredGrid` |
+|  | `Subdivide` | `vtkCellGridToUnstructuredGrid` | `vtkUnstructuredGrid` |
+|  | `Triangulate` | `vtkTriangleFilter` | `vtkPolyData` |
+|  | `AsPolygons` | — | `vtkPolyData` |
+| Moving the geometry | `Transform` | `vtkTransformFilter` | the input's structure (an image stays an image) |
+|  | `Warp` | `vtkWarpVector`, `vtkWarpScalar` | a structured grid for a structured input, `vtkPolyData` for a `vtkPolyData`, else `vtkUnstructuredGrid` |
+|  | `Cylindrical` | — | a structured grid for a structured input, `vtkPolyData` for a `vtkPolyData`, else `vtkUnstructuredGrid` |
+|  | `Spherical` | — | a structured grid for a structured input, `vtkPolyData` for a `vtkPolyData`, else `vtkUnstructuredGrid` |
+| Measures and quality | `CellGeometry` | `vtkCellSizeFilter` | fields |
+|  | `CellCenters` | `vtkCellCenters` | fields |
+|  | `CellQuality` | `vtkMeshQuality` | fields |
+|  | `Elevation` | `vtkElevationFilter` | fields |
+|  | `ImplicitValues` | `vtkSampleImplicitFunctionFilter` | fields |
+|  | `CellIds` | `vtkGenerateIds` | fields |
+|  | `PointIds` | `vtkGenerateIds` | fields |
+|  | `FaceGeometry` | — | faces (edges) |
+|  | `FaceCenters` | — | faces (edges) |
+|  | `EdgeLengths` | — | faces (edges) |
+| Fields from fields | `Gradients` | `vtkGradientFilter` | fields |
+|  | `FlowQuantities` | `vtkGradientFilter` | fields |
+|  | `Project` | `vtkCellDataToPointData`, `vtkPointDataToCellData` | fields |
+|  | `ValuesAtCenters` | — | fields |
+|  | `Interpolate` | — | fields |
+|  | `Magnitude` | — | fields |
+|  | `Dot` | — | fields |
+|  | `Cross` | — | fields |
+|  | `Composite` | — | fields |
+|  | `LogValues` | — | fields |
+|  | `Convert` | — | the input's structure |
+| Finite volumes | `Jump` | — | faces |
+|  | `UpwindFlux` | — | faces |
+| Summaries | `Statistics` | `vtkDescriptiveStatistics` | `vtkTable`, a row per field (and component) |
+|  | `Entropy` | — | `vtkTable`, a row per field (and component) |
+|  | `Integrate` | `vtkIntegrateAttributes` | `vtkUnstructuredGrid` of one vertex, as `vtkIntegrateAttributes` |
+| Probing, sampling and particles | `Probe` | `vtkProbeFilter`, `vtkAMRResampleFilter`, `vtkHyperTreeGridProbeFilter` | the input's structure, with the source's fields (the source on port 1) |
+|  | `SphInterpolate` | `vtkSPHInterpolator` | the input's structure, with the particles' fields (the particles on port 1) |
+|  | `Voxelize` | — | `vtkImageData` (the `grid` parameter's) |
+|  | `Streamlines` | `vtkStreamTracer` | `vtkPolyData` (seeds on port 1, or `seeds=`) |
+|  | `Advect` | — | `vtkPolyData` (seeds on port 1, or `seeds=`) |
+| Point clouds | `ExtractPoints` | `vtkExtractPoints` | `vtkPolyData` |
+|  | `ThresholdPoints` | `vtkThresholdPoints` | `vtkPolyData` |
+|  | `MaskPoints` | `vtkMaskPoints` | `vtkPolyData` |
+|  | `Outliers` | `vtkRadiusOutlierRemoval`, `vtkStatisticalOutlierRemoval` | `vtkPolyData` |
+|  | `VoxelDownsample` | `vtkVoxelGrid` | `vtkPolyData` |
+|  | `HaloCatalog` | — | `vtkPolyData` |
+|  | `PointNormals` | `vtkPCANormalEstimation` | fields |
+|  | `SphDensity` | — | fields |
+|  | `Deposit` | — | `vtkImageData` (the `grid` parameter's) |
+| Pieces and ghosts | `GhostCells` | `vtkGhostCellsGenerator` | over every piece of a `vtkPartitionedDataSet` |
+|  | `GenerateGlobalIds` | `vtkGenerateGlobalIds` | over every piece of a `vtkPartitionedDataSet` |
+|  | `MergePieces` | `vtkMergeBlocks` | over every piece of a `vtkPartitionedDataSet` |
+|  | `GhostPoints` | — | over every piece of a `vtkPartitionedDataSet` |
+|  | `Split` | — | a `vtkPartitionedDataSet` |
+|  | `RemoveGhosts` | `vtkRemoveGhosts` | the input's structure |
+| AMR hierarchies | `AverageDown` | — | `vtkOverlappingAMR` |
+| Over time | `RunningStatistics` | `vtkTemporalStatistics` | fields, over the steps |
+|  | `TimeDerivative` | — | fields, over the steps |
+|  | `Advection` | `vtkParticleTracer` | `vtkPolyData` (seeds on port 1, or `seeds=`) |
+|  | `Pathlines` | `vtkParticlePathFilter` | `vtkPolyData` (seeds on port 1, or `seeds=`) |
+|  | `Streaklines` | `vtkStreaklineFilter` | `vtkPolyData` (seeds on port 1, or `seeds=`) |
+
+A field is named as a string, or with where VTK keeps it when a point array and
+a cell array share the name: `field=("p", "cells")`. Or choose it as VTK's own
+filters do, with `SetInputArrayToProcess`, numbering the algorithm's field
+parameters in order. Where Tack takes an implicit function (`Clip`'s `by`),
+VTK's `vtkPlane`, `vtkSphere`, `vtkBox`, `vtkCylinder`, `vtkPlanes` and
+`vtkImplicitBoolean` work as Tack's. They are the same functions, so a clip
+at any value matches, except that a `vtkPlane`'s normal is made a unit vector.
+
+An exception in a filter is VTK's error. It is printed, the output is left
+empty, and the algorithm's `error` attribute keeps the exception for Python
+callers. `error` is `None` after a run that succeeded, so a script checks it
+after `Update()` or a pipeline call.
+
+### Pieces and trees
 
 A `vtkPartitionedDataSet` input runs the filter on each piece and gives a
 `vtkPartitionedDataSet`. The algorithms whose Tack filter answers for the
@@ -229,7 +294,10 @@ pieces together take them together: `GhostCells`, `GenerateGlobalIds` and
 sampling ones (`Voxelize`, `Outliers`, `VoxelDownsample`, `Deposit`,
 `HaloCatalog`). See [Filters over pieces](over-pieces.md). Particles are handed
 from piece to piece after whole steps where the pieces have a layer of ghost
-cells (`GhostCells`); without one, each crossing costs a shortened step.
+cells (`GhostCells`); without one, each crossing costs a shortened step. A path
+that goes from piece to piece, or is pushed out at a wall and comes back in, is
+several polylines, its stretches, each with the path's `seed` and its
+`segment` (0, 1, ...) as cell data.
 
 Readers of Exodus, IOSS, CGNS, EnSight and OpenFOAM files give trees of
 datasets: a `vtkMultiBlockDataSet` or a `vtkPartitionedDataSetCollection`. The
@@ -237,26 +305,9 @@ algorithms take them as they are and give a tree of the same shape, with the
 blocks' names and a collection's data assembly. Each partitioned dataset in the
 tree, a `vtkMultiPieceDataSet` block too, is filtered as a whole, so
 `GhostCells` and `GenerateGlobalIds` see all its pieces together, and each
-block that is one dataset is filtered on its own.
-
-Over MPI ranks, each rank's pipeline holds its own pieces, and the algorithms
-whose answer needs every piece take the other ranks' too. They take the ranks
-from VTK, as VTK's own parallel filters do: VTK's global controller
-(`vtkMultiProcessController.GetGlobalController()`, which `pvbatch` sets, or a
-script with `SetGlobalController`), its communicator made mpi4py's by VTK's
-`vtkMPI4PyCommunicator`. `tack.interop.vtk.world()` gives that `World`. VTK's
-wheels have no MPI, so with them give the ranks yourself, an mpi4py
-communicator or a `World`: `GenerateGlobalIds(world=MPI.COMM_WORLD)`. Over
-ranks, `MergePieces` gives the whole to its `root` rank and an empty dataset
-to the others.
-
-A field is named as a string, or with where VTK keeps it when a point array and
-a cell array share the name: `field=("p", "cells")`. Or choose it as VTK's own
-filters do, with `SetInputArrayToProcess`, numbering the algorithm's field
-parameters in order. Where Tack takes an implicit function (`Clip`'s `by`),
-VTK's `vtkPlane`, `vtkSphere`, `vtkBox`, `vtkCylinder`, `vtkPlanes` and
-`vtkImplicitBoolean` work as Tack's. They are the same functions, so a clip
-at any value matches, except that a `vtkPlane`'s normal is made a unit vector.
+block that is one dataset is filtered on its own. A partitioned dataset with no
+partitions on any rank, such as the node and side sets an IOSS reader leaves
+unread, stays empty: the filter is not run on it.
 
 <!-- tack-check: vtk-pipeline-trees -->
 ```python
@@ -288,10 +339,36 @@ inside = (threshold >> ball)(tree)
 assert isinstance(inside, dm.vtkPartitionedDataSetCollection)
 ```
 
-An exception in a filter is VTK's error. It is printed, the output is left
-empty, and the algorithm's `error` attribute keeps the exception for Python
-callers. `error` is `None` after a run that succeeded, so a script checks it
-after `Update()` or a pipeline call.
+### Over MPI ranks
+
+Over MPI ranks, each rank's pipeline holds its own pieces, and the algorithms
+whose answer needs every piece take the other ranks' too. They take the ranks
+from VTK, as VTK's own parallel filters do: VTK's global controller
+(`vtkMultiProcessController.GetGlobalController()`, which `pvbatch` sets, or a
+script with `SetGlobalController`), its communicator made mpi4py's by VTK's
+`vtkMPI4PyCommunicator`. `tack.interop.vtk.world()` gives that `World`. VTK's
+wheels have no MPI, so with them give the ranks yourself, an mpi4py
+communicator or a `World`: `GenerateGlobalIds(world=MPI.COMM_WORLD)`. Over
+ranks, `MergePieces` gives the whole to its `root` rank and an empty dataset
+to the others.
+
+### On a GPU
+
+An algorithm runs where its input's arrays are: on the CPU for VTK's host
+arrays, and on the GPU for a VTK whose arrays are in device memory (its own
+device arrays, or Viskores'), whose memory Tack shares through DLPack.
+`device=` runs it on another device: the input is moved there once, and the
+copy is kept for every algorithm that asks for that device while the input is
+unchanged, so a chain of algorithms on one GPU moves its input once. The result
+goes back to VTK in device memory where VTK can hold it, and is copied to the
+host where it cannot, as with VTK's PyPI wheel, which has no DLPack. Either way
+the same arrays come out: `Contour(field="Temp", value=400.0, device="cuda")`
+contours on the GPU whatever VTK holds.
+
+The examples below take `--arch` for this (`cpu`, `cuda`, `hip` or
+`level_zero`). Data in f64 needs a device with f64, which Metal is not.
+
+### Summaries
 
 The summaries reduce all their input to one answer, as VTK's
 `vtkDescriptiveStatistics` and `vtkIntegrateAttributes` do: every dataset of a
@@ -305,6 +382,8 @@ vector field's components one by one; the statistics keep Tack's names
 centroid, each field's integral on it, and the measure as `Length`, `Area` or
 `Volume`; integrals are by quadrature through each cell's map, so curved and
 higher-order cells exactly.
+
+### AMR hierarchies
 
 An AMR hierarchy, a `vtkOverlappingAMR`, is one Tack `AMRDataSet` (see
 [AMR and octrees](../data/amr-and-octrees.md)), each box marked with what a
@@ -356,9 +435,31 @@ kept = Threshold(field=("Gaussian-Pulse", "cells"), lower=0.0, upper=1.0)(pulse)
 assert kept.GetNumberOfPartitionedDataSets() == 2       # a level each, box by box
 ```
 
+### Over time
+
 The temporal filters run in situ, one step per execution, or drive the
-pipeline through the input's time steps themselves. See
+pipeline through the input's time steps themselves. A tree's steps, as the
+OpenFOAM, IOSS and CGNS readers give them, go through unit by unit: each
+partitioned dataset and each block that is one dataset has a filter of its own,
+and the output is a tree of the same shape. See
 [Steps over time](over-time.md#in-a-vtk-pipeline).
+
+### Examples
+
+Programs in `packages/tack-vis/examples/`, each a pipeline from a reader to a
+rendered picture (`--png`), with checks against VTK's own filters. 50 to 53 read
+VTK's test data, fetched once by its content hashes, or from `TACK_VTK_DATA`, a
+VTK build's `ExternalData` directory.
+
+| Program | What it shows |
+|---|---|
+| `47_vtk_pipeline.py` | a reader, Tack's gradients and contour, a writer and a renderer |
+| `48_vtk_pieces.py` | a `vtkPartitionedDataSet` through ghost cells, a contour and a merge |
+| `49_vtk_streamlines.py` | Tack's streamlines feeding VTK's tubes |
+| `50_vtk_exodus.py` | an Exodus file's collection (IOSS): an isosurface, streamlines as tubes, the surface |
+| `51_vtk_openfoam.py` | an OpenFOAM case's multiblock: gradients, vorticity, a slice, integrals over patches |
+| `52_vtk_pathlines.py` | an OpenFOAM time series through `Pathlines`, driving and in situ |
+| `53_vtk_amr.py` | an Enzo AMR file: statistics and the mass over the hierarchy, a slice of each level |
 
 ## Write your own VTK algorithm
 

@@ -79,6 +79,7 @@ def main():
         assert merged.number_of_points == points, (merged.number_of_points, points)
     hierarchy(comm, options)
     temporal(comm, options)
+    trees(comm, options, pieces, points)
     if rank == 0:
         print(f"ok: {size} ranks, world from {mode}", flush=True)
 
@@ -125,6 +126,38 @@ def temporal(comm, options):
         expected = np.asarray(whole.GetOutputDataObject(0).points.data)
         assert got.shape == expected.shape, (got.shape, expected.shape)
         np.testing.assert_allclose(got, expected, rtol=1e-6, atol=1e-6)
+
+
+def trees(comm, options, pieces, points):
+    """A collection of the slabs, of rank 0's slab alone (no partitions elsewhere) and
+    of nothing (no partitions anywhere, as an IOSS reader's unread sets): the filters
+    over pieces run on the first two, every rank agreeing which are empty, and leave
+    the third empty."""
+    rank = comm.Get_rank()
+    tree = dm.vtkPartitionedDataSetCollection()
+    tree.SetNumberOfPartitionedDataSets(3)
+    entries = [pieces, pieces if rank == 0 else dm.vtkPartitionedDataSet(),
+               dm.vtkPartitionedDataSet()]
+    for i, entry in enumerate(entries):
+        tree.SetPartitionedDataSet(i, entry)
+    numbered = ta.GenerateGlobalIds(**options)(tree)
+    ids = np.asarray(numbered.GetPartitionedDataSet(0).GetPartition(0)
+                     .GetPointData().GetGlobalIds())
+    every = np.unique(np.concatenate(comm.allgather(ids)))
+    assert np.array_equal(every, np.arange(points)), (every.size, points)
+    alone = numbered.GetPartitionedDataSet(1)
+    assert alone.GetNumberOfPartitions() == (1 if rank == 0 else 0)
+    assert numbered.GetPartitionedDataSet(2).GetNumberOfPartitions() == 0
+    seeds = np.array([[-7.5, 0.0, 0.0]]) if rank == 0 else np.zeros((0, 3))
+    out = (ta.Gradients(field="RTData", at="points", name="g", **options)
+           >> ta.Streamlines(field="g", seeds=seeds, step_size=0.01, steps=5,
+                             **options))(tree)
+    assert out.GetPartitionedDataSet(2).GetNumberOfPartitions() == 0
+    traced = comm.allreduce(sum(block.number_of_cells
+                                for i in range(2)
+                                for block in out.GetPartitionedDataSet(i)
+                                if block is not None))
+    assert traced >= 2, traced
 
 
 def pulse():

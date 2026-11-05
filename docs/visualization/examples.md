@@ -43,6 +43,10 @@ VTK and MFEM ones need the `interop` extra.
 | How do Tack's filters sit in a VTK pipeline, between a reader, a writer and a renderer? | `47_vtk_pipeline.py` |
 | How does a `vtkPartitionedDataSet` go through ghost cells, a contour and a merge? | `48_vtk_pieces.py` |
 | How do Tack's streamlines feed VTK's tubes and rendering? | `49_vtk_streamlines.py` |
+| How does an Exodus file's collection go through Tack's contours and streamlines? | `50_vtk_exodus.py` |
+| How does an OpenFOAM case's multiblock go through gradients, a slice and integrals over its patches? | `51_vtk_openfoam.py` |
+| How do pathlines follow a time series, driving the pipeline and in situ? | `52_vtk_pathlines.py` |
+| How do Tack's filters take an AMR file, the hierarchy whole and box by box? | `53_vtk_amr.py` |
 | How do arrays pass between Tack and VTK without copies, Tack, then VTK, then Tack again? | `39_vtk_interop.py` |
 | How does an MFEM solution on a curved, quadratic mesh come into Tack, and does it match MFEM? | `43_mfem_poisson.py` |
 | What does the dataset API look like on one mixed grid of hexahedra, wedges, pyramids and tetrahedra? | `42_dataset_api_tour.py` |

@@ -301,6 +301,13 @@ A filter drives where its input has time steps, unless VTK's
 an in situ adaptor sets it. `mode="in situ"` or `mode="driving"` chooses
 either. Driving to a step gives what the same steps give in situ.
 
+A reader that gives a tree of datasets at each step (OpenFOAM, IOSS, CGNS)
+feeds a filter of each kind unit by unit: each partitioned dataset in the tree,
+and each block that is one dataset, has a Tack filter of its own, and the output
+is a tree of the same shape. `52_vtk_pathlines.py` in
+`packages/tack-vis/examples/` follows pathlines through an OpenFOAM case both
+ways.
+
 <!-- tack-check: over-time-vtk -->
 ```python
 from vtkmodules.vtkFiltersGeneral import vtkTimeSourceExample

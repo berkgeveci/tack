@@ -15,7 +15,7 @@ The pipeline:
       >> Contour(field="RTData")      Tack: each piece's isosurface, its ghost
                                       triangles marked as the neighbour's
       >> MergePieces()                Tack: one surface, shared points once
-      >> vtkXMLUnstructuredGridWriter
+      >> vtkXMLPolyDataWriter
 
 The pieces are written first: VTK's wavelet cut into slabs (vtkExtractVOI),
 tetrahedralized by Tack, so they meet face to face. The merged surface is
@@ -50,7 +50,7 @@ from vtkmodules.vtkImagingCore import vtkExtractVOI, vtkRTAnalyticSource
 from vtkmodules.vtkIOParallelXML import vtkXMLPartitionedDataSetWriter
 from vtkmodules.vtkIOXML import (
     vtkXMLPartitionedDataSetReader,
-    vtkXMLUnstructuredGridWriter,
+    vtkXMLPolyDataWriter,
 )
 
 import tack
@@ -119,8 +119,8 @@ for i, piece in enumerate(surfaces):
     ghost_triangles = int((piece.cell_data["vtkGhostType"] != 0).sum())
     print(f"  piece {i}: {piece.number_of_cells} triangles, {ghost_triangles} of them its "
           f"neighbours' (ghosts)")
-surface_path = output / "pieces_isosurface.vtu"
-write(vtkXMLUnstructuredGridWriter(file_name=str(surface_path)), merged, surface_path)
+surface_path = output / "pieces_isosurface.vtp"
+write(vtkXMLPolyDataWriter(file_name=str(surface_path)), merged, surface_path)
 print(f"wrote {surface_path}: {merged.number_of_cells} triangles, {merged.number_of_points} "
       f"points")
 

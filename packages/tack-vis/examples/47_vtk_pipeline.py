@@ -12,7 +12,7 @@ The pipeline:
     vtkXMLUnstructuredGridReader      a tetrahedral mesh of VTK's wavelet
       >> Gradients(field="RTData")     Tack: the gradient on the points
       >> Contour(field="RTData")       Tack: the isosurface, carrying the gradient
-      >> vtkXMLUnstructuredGridWriter  the surface, as a .vtu file
+      >> vtkXMLPolyDataWriter          the surface, as a .vtp file
       (rendered, coloured by the gradient's magnitude, with --png)
 
 The mesh is written first (the wavelet tetrahedralized by Tack), so the example
@@ -45,6 +45,7 @@ from vtkmodules.vtkFiltersCore import vtkContourFilter
 from vtkmodules.vtkFiltersVerdict import vtkCellSizeFilter
 from vtkmodules.vtkImagingCore import vtkRTAnalyticSource
 from vtkmodules.vtkIOXML import (
+    vtkXMLPolyDataWriter,
     vtkXMLUnstructuredGridReader,
     vtkXMLUnstructuredGridWriter,
 )
@@ -58,10 +59,11 @@ output.mkdir(parents=True, exist_ok=True)
 
 
 def write(data, path):
-    """Write ``data``: a writer called on its input writes it (and returns ``None``
-    whether or not it could, so check the file)."""
+    """Write ``data``, a grid or a surface: a writer called on its input writes it (and
+    returns ``None`` whether or not it could, so check the file)."""
     path.unlink(missing_ok=True)
-    vtkXMLUnstructuredGridWriter(file_name=str(path))(data)
+    writer = vtkXMLPolyDataWriter if path.suffix == ".vtp" else vtkXMLUnstructuredGridWriter
+    writer(file_name=str(path))(data)
     if not path.exists():
         raise RuntimeError(f"could not write {path}")
 
@@ -88,7 +90,7 @@ surface = (reader >> gradients >> contour)()
 for algorithm in (gradients, contour):
     if algorithm.error is not None:
         raise algorithm.error
-surface_path = output / "isosurface.vtu"
+surface_path = output / "isosurface.vtp"
 write(surface, surface_path)
 print(f"wrote {surface_path}: {surface.number_of_cells} triangles, "
       f"arrays {sorted(surface.point_data.keys())}")

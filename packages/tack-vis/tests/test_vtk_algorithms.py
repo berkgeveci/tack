@@ -172,6 +172,18 @@ def test_filters_over_pieces_take_them_together():
     assert isinstance(merged, vtk.vtkImageData)
     assert merged.number_of_points == whole.number_of_points
     np.testing.assert_array_equal(merged.point_data["RTData"], whole.point_data["RTData"])
+    # Surfaces merge into a surface; a mix of kinds into an unstructured grid.
+    surfaces = (ta.Tetrahedralize() >> ta.GhostCells() >> ta.Contour(field="RTData",
+                                                                     value=150.0))(pieces)
+    surface = ta.MergePieces()(surfaces)
+    assert isinstance(surface, vtk.vtkPolyData)
+    alone = (ta.Tetrahedralize() >> ta.Contour(field="RTData", value=150.0))(whole)
+    assert surface.number_of_cells == alone.number_of_cells
+    mixed = vtk.vtkPartitionedDataSet()
+    mixed.number_of_partitions = 2
+    mixed.SetPartition(0, surfaces.GetPartition(0))
+    mixed.SetPartition(1, ta.Tetrahedralize()(pieces).GetPartition(1))
+    assert ta.MergePieces()._output_type(mixed) is vtk.vtkUnstructuredGrid
     tets = ta.Tetrahedralize()(pieces)
     ghosted = ta.GhostCells()(tets)
     for piece, before in zip(ghosted, tets):
@@ -1574,6 +1586,14 @@ def test_a_filter_that_makes_a_dataset_gives_a_partitioned_dataset_per_level():
     assert isinstance(surfaces, vtk.vtkPartitionedDataSetCollection)
     assert sum(block.number_of_cells for level in range(amr.GetNumberOfLevels())
                for block in surfaces.GetPartitionedDataSet(level)) > 0
+    # A filter that gives polydata gives it box by box too; one that keeps its
+    # input's kind gives each box's cells as a grid.
+    sliced = ta.SlicePlane(origin=(0.0, 0.0, 0.0), normal=(0.0, 0.0, 1.0))(amr)
+    for level in range(amr.GetNumberOfLevels()):
+        for block in sliced.GetPartitionedDataSet(level):
+            assert isinstance(block, vtk.vtkPolyData)
+    for block in out.GetPartitionedDataSet(0):
+        assert isinstance(block, vtk.vtkUnstructuredGrid)
 
 
 def test_a_hierarchy_is_probed_at_its_points_box_by_box():
@@ -1893,7 +1913,7 @@ def test_an_in_situ_adaptor_keeps_a_filter_from_driving():
     assert plain.asked == [1.0]
 
 
-def test_seeds_on_port_1_and_trees_refused():
+def test_seeds_on_port_1():
     seeds = vtk.vtkPolyData()
     seeds.points = vtk.vtkPoints(data=np.array([[1.0, 5.0, 1.0]]))
     source = _steps_source()
@@ -1903,9 +1923,112 @@ def test_seeds_on_port_1_and_trees_refused():
     paths.Update()
     assert paths.error is None, paths.error
     assert paths.GetOutputDataObject(0).number_of_cells == 1
-    tree = vtk.vtkMultiBlockDataSet()
-    tree.SetNumberOfBlocks(1)
-    tree.SetBlock(0, dataset_to_vtk(_flow_step(0.0)))
-    stats = ta.RunningStatistics(fields=["T"])
-    stats.SetInputDataObject(0, tree)
-    assert stats.Update() == 0 and isinstance(stats.error, TypeError)
+
+
+def _step_collection(t, stamp_root=True):
+    """A collection of a step: ``one`` (the step), ``none`` (no partitions, as a
+    reader's unread sets) and ``halves`` (the step split in two), stamped with ``t``
+    on the collection, as readers stamp trees, or only on its datasets."""
+    step = _flow_step(t)
+    entries = {"one": [dataset_to_vtk(step)], "none": [],
+               "halves": [dataset_to_vtk(piece) for piece in td.split(step, (2, 1, 1))]}
+    tree = vtk.vtkPartitionedDataSetCollection()
+    tree.SetNumberOfPartitionedDataSets(len(entries))
+    for i, (name, parts) in enumerate(entries.items()):
+        entry = vtk.vtkPartitionedDataSet()
+        entry.SetNumberOfPartitions(len(parts))
+        for j, part in enumerate(parts):
+            entry.SetPartition(j, part)
+        tree.SetPartitionedDataSet(i, entry)
+        tree.GetMetaData(i).Set(vtk.vtkCompositeDataSet.NAME(), name)
+    if stamp_root:
+        tree.GetInformation().Set(vtk.vtkDataObject.DATA_TIME_STEP(), t)
+    return tree
+
+
+@pytest.mark.parametrize("stamp_root", [True, False])
+def test_temporal_filters_in_situ_take_trees_unit_by_unit(stamp_root):
+    """In situ, each entry of a collection has a filter of its own: what the entry
+    alone gives (the one dataset's, each half's), the empty one left empty, the names
+    kept, at the step's time (the collection's, or its datasets')."""
+    stats = ta.RunningStatistics(fields=["T"], mode="in situ")
+    paths = ta.Pathlines(field="v", seeds=[[1.0, 5.0, 1.0], [2.0, 2.0, 1.0]], mode="in situ")
+    for t in TIMES:
+        tree = _step_collection(t, stamp_root)
+        for algorithm in (stats, paths):
+            algorithm.SetInputDataObject(0, tree)
+            algorithm.Update()
+            assert algorithm.error is None, algorithm.error
+    alone = _in_situ(lambda: ta.RunningStatistics(fields=["T"]))[-1]
+    lines = _in_situ(lambda: ta.Pathlines(field="v", seeds=[[1.0, 5.0, 1.0],
+                                                            [2.0, 2.0, 1.0]]))[-1]
+    for algorithm in (stats, paths):
+        out = algorithm.GetOutputDataObject(0)
+        assert isinstance(out, vtk.vtkPartitionedDataSetCollection)
+        assert _time_of(out) == TIMES[-1]
+        assert [out.GetMetaData(i).Get(vtk.vtkCompositeDataSet.NAME())
+                for i in range(3)] == ["one", "none", "halves"]
+        assert out.GetPartitionedDataSet(1).GetNumberOfPartitions() == 0
+    one = stats.GetOutputDataObject(0).GetPartitionedDataSet(0).GetPartition(0)
+    _same_arrays(one, alone, ["T_mean", "T_variance", "T_min", "T_max"])
+    assert one.GetFieldData().GetArray("count").GetValue(0) == len(TIMES)
+    halves = stats.GetOutputDataObject(0).GetPartitionedDataSet(2)
+    assert halves.GetNumberOfPartitions() == 2
+    assert sum(h.number_of_points for h in halves) > alone.number_of_points  # shared plane
+    traced = paths.GetOutputDataObject(0).GetPartitionedDataSet(0).GetPartition(0)
+    np.testing.assert_array_equal(np.asarray(traced.points.data), np.asarray(lines.points.data))
+
+
+def _tree_source(source):
+    """``source``'s steps, each as block 0 of a multiblock (``vtkMultiBlockDataGroupFilter``),
+    the time on the tree."""
+    group = vtk.vtkMultiBlockDataGroupFilter()
+    group.SetInputConnection(source.GetOutputPort())
+    return group
+
+
+@pytest.mark.parametrize("make", [
+    lambda: ta.RunningStatistics(fields=["T"]),
+    lambda: ta.Pathlines(field="v", seeds=[[1.0, 5.0, 1.0], [2.0, 2.0, 1.0]]),
+    lambda: ta.Streaklines(field="v", seeds=[[1.0, 5.0, 1.0]])])
+def test_temporal_filters_driving_take_trees(make):
+    """Driving through a tree's steps gives a tree of what the steps give its block,
+    each step asked for once; one that answers at a time gives it at that time."""
+    source = _steps_source()
+    driven = _driven(make, _tree_source(source))
+    driven.UpdateTimeStep(TIMES[-1])
+    assert driven.error is None, driven.error
+    assert source.asked == list(TIMES)
+    out = driven.GetOutputDataObject(0)
+    assert isinstance(out, vtk.vtkMultiBlockDataSet) and out.GetNumberOfBlocks() == 1
+    plain = _driven(make, _steps_source())
+    plain.UpdateTimeStep(TIMES[-1])
+    expected = plain.GetOutputDataObject(0)
+    assert _time_of(out) == _time_of(expected)
+    got = out.GetBlock(0)
+    assert got.GetClassName() == expected.GetClassName()
+    np.testing.assert_array_equal(np.asarray(got.points.data) if got.GetNumberOfPoints() else [],
+                                  np.asarray(expected.points.data)
+                                  if expected.GetNumberOfPoints() else [])
+    for name in expected.point_data.keys():
+        np.testing.assert_array_equal(np.asarray(got.point_data[name]),
+                                      np.asarray(expected.point_data[name]), err_msg=name)
+
+
+def test_trees_with_empty_entries_reach_filters_over_pieces():
+    """An entry with no partitions (an Exodus file's unread sets) gives an empty entry,
+    the filter not run on it: Streamlines, over pieces, had none to start its seeds
+    from."""
+    tree = _step_collection(0.0)
+    streamlines = ta.Streamlines(field="v", seeds=[[1.0, 5.0, 1.0]], step_size=0.1, steps=20)
+    out = streamlines(tree)
+    assert streamlines.error is None, streamlines.error
+    assert out.GetPartitionedDataSet(1).GetNumberOfPartitions() == 0
+    assert out.GetPartitionedDataSet(0).GetPartition(0).number_of_cells == 1
+    ghosts = ta.GhostCells()
+    grown = ghosts(tree)
+    assert ghosts.error is None, ghosts.error
+    assert grown.GetPartitionedDataSet(1).GetNumberOfPartitions() == 0
+    empty = vtk.vtkPartitionedDataSet()
+    alone = ta.GenerateGlobalIds()
+    assert isinstance(alone(empty), vtk.vtkPartitionedDataSet) and alone.error is None

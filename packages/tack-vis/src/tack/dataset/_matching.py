@@ -235,8 +235,13 @@ def _runs_by_piece(piece):
 
 
 def _all_here(blocks):
-    """Whether every block is on this rank."""
-    return len(blocks.local) == blocks.count
+    """Whether every block is on one rank, this one: the others, holding none, know it
+    too (the blocks' spread is every rank's), and send and receive nothing. Asked
+    only of this rank's count, the ranks with none went on to the exchange alone."""
+    import numpy as np
+
+    counts = np.diff(np.asarray(blocks._starts))
+    return int(counts.max(initial=0)) == blocks.count
 
 
 def _partners_here(blocks, found):
@@ -244,6 +249,8 @@ def _partners_here(blocks, found):
     pieces on the host, in the order the messages would bring them (by sending
     block, then row), without a message from every block to every piece."""
     gids = list(blocks.local)
+    if not gids:                        # another rank holds them all
+        return {}
     rows = [np.concatenate([found[g][k] for g in gids]) for k in range(5)]
     order, starts = _runs_by_piece(rows[0])
     rows = [column[order] for column in rows]

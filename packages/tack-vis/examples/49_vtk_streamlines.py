@@ -109,8 +109,8 @@ print(f"{paths.number_of_cells} paths, {paths.number_of_points} points; wrote {t
 
 points = paths.points.data
 time = paths.point_data["time"]
-offsets = paths.cells.offsets_array
-connectivity = paths.cells.connectivity_array
+offsets = paths.lines.offsets_array
+connectivity = paths.lines.connectivity_array
 worst_radius = worst_rise = 0.0
 for k in range(paths.number_of_cells):
     ids = connectivity[offsets[k]:offsets[k + 1]]
