@@ -212,7 +212,25 @@ array accesses.
   area, an id) are left alone.
 
 Attributes: `topology`, `size`, `on` (the entity kind the values are
-indexed by), `interpolated`, and `order` where it applies.
+indexed by), `interpolated`, `continuous`, and `order` where it applies.
+
+### Fields evaluated where they are read
+
+A space may compute its field at each point an algorithm reads it instead of
+storing values, as a field expression does. `Space` declares what such a space
+gives, each with its default:
+
+| Attribute | Default | Meaning |
+|---|---|---|
+| `evaluated` | `False` | the view's `value(c, pc)` and `corner_value(c, j)` compute the field (with `value_range(c)`, a bound on the cell, which may be unbounded); its `values` hold nothing to read |
+| `continuous` | `False` (`True` for `H1`) | `contour` shares crossings between cells, so its surface is watertight |
+| `default_subdivision` | `1` | the lattice steps along each cell axis that `contour`, `clip` and `threshold` cut a cell into by default |
+| `integration_order` | `None` | the polynomial order `integrate`'s quadrature is exact to; `None` and `integrate` refuses the field |
+| `rebind(field, data)` | `None` | the field on a filter's output, made from the fields carried there; `None` and the filter leaves it out |
+| `stored(field, data)` | `field` | the field as stored values on `data`'s device, which `statistics`, `entropy`, `owned_values` and `dataset_to_vtk` read |
+
+An unbounded `value_range` cuts every cell, so `clip` and `threshold` give the
+same region as for a stored field of the same values, in more pieces.
 
 ### Moving a field between spaces
 

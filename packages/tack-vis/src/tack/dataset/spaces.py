@@ -70,6 +70,45 @@ class Space:
     #: Whether cells differ in how their values are read (``cell_keys``).
     varies = False
 
+    #: Whether a field of this space is continuous across cells, so ``contour``
+    #: shares its crossings between them and its surface is watertight (``H1``).
+    continuous = False
+
+    #: Whether a field of this space is evaluated where it is read, not stored: an
+    #: interpolated space whose view computes the field at the points an algorithm
+    #: asks for, by ``value(c, pc)`` and ``corner_value(c, j)`` (and ``value_range(c)``,
+    #: a bound on the cell's values, which may be unbounded). Its ``values`` hold
+    #: nothing to read. Algorithms that read values rather than the view (the
+    #: reductions, ``owned_values``, writers) read ``stored``; filters make it again on
+    #: their output with ``rebind``; ``subdivide`` samples it at each lattice point.
+    evaluated = False
+
+    #: For an evaluated space: the lattice steps along each cell axis that
+    #: ``contour``, ``clip`` and ``threshold`` cut a cell into by default to sample it
+    #: (``default_level``), as an ``H1`` field's order does; 1 samples the cell's
+    #: corners only.
+    default_subdivision = 1
+
+    #: For an evaluated space: the polynomial order along each axis ``integrate``
+    #: integrates it exactly to. Its quadrature takes enough points for that order
+    #: and the geometry's, so the integral is exact where the field is a polynomial
+    #: of at most that order in the reference coordinates, and a quadrature
+    #: approximation where it is not. ``None``: ``integrate`` refuses the field.
+    integration_order = None
+
+    def rebind(self, field, data):
+        """For an evaluated space: ``field`` on ``data``, a filter's output, made
+        again from what the filter carried there, or ``None`` when it cannot be (a
+        field it reads was not carried); the filter then leaves it out. Other
+        spaces' fields are carried by their values and never asked."""
+
+    def stored(self, field, data):
+        """``field`` (of this space, on ``data``) as a field of stored values on
+        ``data``'s device, for an algorithm that reads values rather than the view:
+        ``field`` itself for a space that stores its values; an evaluated space gives
+        its values at the points or cells, in a space that stores them."""
+        return field
+
     def __new__(cls, where, *args, **kwargs):
         topology = getattr(where, "topology", where)
         params = cls._params(*args, **cls._defaults(topology, args, kwargs))
@@ -444,6 +483,8 @@ class H1(Space):
     table shares them; a cell's corners must be its points (so a corner's value
     is its point's), and the space holds as many values as the largest index and
     the points need. A filter's output numbers its values by entity again."""
+
+    continuous = True
 
     on = "points"
     interpolated = True

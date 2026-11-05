@@ -502,8 +502,12 @@ def carry(data, out, *, points=None, cells=None, faces=None, faces_to_cells=None
         if geometry is None:
             raise ValueError("the geometry cannot be carried by these maps; pass it")
     carried = {}
+    rebound = []
     for name in selected(data, fields):
         source = data.fields[name]
+        if source.space.evaluated:
+            rebound.append((name, source))
+            continue
         field = _carry_field(source, data, out, points, cells, faces,
                              faces_to_cells, edges, edges_to_cells)
         if field is not None and source.gradient is not None:
@@ -527,5 +531,12 @@ def carry(data, out, *, points=None, cells=None, faces=None, faces_to_cells=None
     made = DataSet(out, geometry, fields=carried, sets=sets, **data._frame())
     carry_ids(data, made, points=points, cells=None if faces_to_cells is not None or
               edges_to_cells is not None else cells)
-    return carry_marks(data, made, points=points, cells=cells, faces_to_cells=faces_to_cells,
+    made = carry_marks(data, made, points=points, cells=cells, faces_to_cells=faces_to_cells,
                        edges_to_cells=edges_to_cells)
+    # An evaluated field has no values to move: its space makes it again on the
+    # output, from the fields carried there.
+    for name, source in rebound:
+        field = source.space.rebind(source, made)
+        if field is not None:
+            made.fields[name] = field
+    return made

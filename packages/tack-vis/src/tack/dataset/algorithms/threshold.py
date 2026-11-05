@@ -76,7 +76,7 @@ def threshold(data, field, lower, upper, all_points=True, fields=None, subdivisi
         raise TypeError(f"threshold needs a field on the points or cells, not {space!r}")
     from tack.dataset.algorithms.subdivide import split_by_range, subdivides
 
-    by_cells = isinstance(space, Constant) or (space.on == "cells"
+    by_cells = isinstance(space, Constant) or (space.on == "cells" and not space.evaluated
                                                and not isinstance(space, (H1, L2)))
     if not by_cells and getattr(data.topology, "reference_cells", True) and (
             subdivides(data, field) or tolerance is not None

@@ -223,7 +223,8 @@ def _kept(flags, slots, ids):
 
 @on_inputs_device
 def owned_values(data, field):
-    """The values of ``field`` (a ``Field`` of ``data``, or its name) that ``data`` owns: all of
+    """The values of ``field`` (a ``Field`` of ``data``, or its name; an evaluated one's
+    stored values) that ``data`` owns: all of
     them when it has no marks for where they live, else those of cells and
     points not marked a duplicate or hidden, materialized. Fields on faces or
     edges, and order-2 fields, have no marks of their own yet; on a dataset
@@ -234,6 +235,7 @@ def owned_values(data, field):
 
     if is_field_key(field):
         field = data.fields[field]
+    field = field.space.stored(field, data)
     space = field.space
     on_points = (isinstance(space, H1) and space.order == 1) or (
         isinstance(space, Values) and space.on == "points")
