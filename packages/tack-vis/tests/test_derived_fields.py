@@ -59,6 +59,23 @@ def test_a_boundary_of_the_same_geometry_derives_its_normals_once(backend):
     assert td.named_field(moved, "normals", "cells") is not td.named_field(first, "normals", "cells")
 
 
+def test_mesh_metrics_change_when_the_mesh_does(backend):
+    tets = td.tetrahedralize(_grid())
+    solid = td.DataSet(tets.topology, tets.geometry.values.numpy())
+    before = td.named_field(solid, "measures", "cells")
+    surface = td.extract_surface(solid)
+    normals = td.named_field(surface, "normals", "cells")
+    stretched = solid.geometry.values.numpy() * np.float32(2.0)
+    tack.copyto(solid.geometry.values, stretched)
+    after = td.named_field(solid, "measures", "cells")
+    assert after is not before
+    np.testing.assert_allclose(after.values.numpy().sum(), 8 * before.values.numpy().sum(),
+                               rtol=1e-5)
+    again = td.extract_surface(solid)
+    assert again.geometry is not surface.geometry
+    assert td.named_field(again, "normals", "cells") is not normals
+
+
 def test_registered_names_and_misses(backend):
     calls = []
 

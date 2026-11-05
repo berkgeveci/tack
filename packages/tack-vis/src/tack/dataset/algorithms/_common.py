@@ -147,10 +147,11 @@ _LOCATIONS = ("points", "cells", "faces")
 def register_derived_field(name, compute, at):
     """Lets ``name`` stand, at ``at`` (``"points"``, ``"cells"`` or ``"faces"``), for a
     field a dataset makes from itself when it stores none of that name there:
-    ``compute(data)`` gives the ``Field`` on ``data``, a function of its geometry:
-    made the first time it is asked for and kept on the geometry, so every
-    dataset on the same geometry shares it (``extract_surface`` of the same
-    geometry gives the same surface geometry, and so the same normals). One name
+    ``compute(data)`` gives the ``Field`` on ``data``, a function of its mesh:
+    made the first time it is asked for and kept with the mesh (``mesh_kept``),
+    so every dataset on the same geometry shares it and it is made again when
+    the mesh changes. ``extract_surface`` of the same mesh gives the same surface
+    geometry, and so the same normals. One name
     is one quantity, registered at each location it has: Tack registers
     ``normals`` (a surface's at its points and cells, ``surface_normals``'; every
     mesh's at its faces, ``face_geometry``'s), ``measures`` (each cell's volume, area
@@ -178,13 +179,24 @@ def _location(field):
     return None
 
 
+def mesh_kept(data):
+    """A dict for what is computed from ``data``'s mesh alone (its derived fields,
+    its boundary's geometry), kept with the mesh: shared by every dataset on the
+    same geometry (and so the same topology), and emptied when Tack has written
+    the positions since (``arrays._revision``), so it changes when the mesh does."""
+    geometry = data.geometry
+    revision = arrays._revision(geometry.values)
+    kept = geometry.__dict__.get("_mesh_kept")
+    if kept is None or kept[0] != revision:
+        kept = geometry.__dict__["_mesh_kept"] = (revision, {})
+    return kept[1]
+
+
 def _derived(data, name, at):
-    # Part of the geometry, kept on it: any dataset on the same geometry (and so
-    # the same topology) shares them.
-    made = data.geometry.__dict__.setdefault("_derived", {})
-    if (name, at) not in made:
-        made[(name, at)] = _DERIVED[name][at](data)
-    return made[(name, at)]
+    kept = mesh_kept(data)
+    if (name, at) not in kept:
+        kept[(name, at)] = _DERIVED[name][at](data)
+    return kept[(name, at)]
 
 
 def named_field(data, name, at=None):

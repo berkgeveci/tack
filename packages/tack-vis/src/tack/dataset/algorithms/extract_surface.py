@@ -209,15 +209,18 @@ def _fresh_boundary(data, fields):
 
 def _on_boundary(data, surface, fields, **maps):
     """The boundary ``surface`` with ``data``'s fields carried by ``maps``. Its
-    geometry is part of ``data``'s: kept on it, so a repeated call on the same
-    geometry gives the same surface geometry, and what is derived from that
-    (``normals``, ``measures``: ``register_derived_field``) is derived once."""
-    kept = data.geometry.__dict__.get("_boundary")
-    if kept is not None and kept[0] is surface:
-        out = carry(data, surface, geometry=kept[1], fields=fields, **kept[2])
+    geometry is part of ``data``'s mesh and kept with it (``mesh_kept``), so a
+    repeated call on the same mesh gives the same surface geometry, and what is
+    derived from that (``normals``, ``measures``) is derived once."""
+    from tack.dataset.algorithms._common import mesh_kept
+
+    kept = mesh_kept(data)
+    held = kept.get("boundary")
+    if held is not None and held[0] is surface:
+        out = carry(data, surface, geometry=held[1], fields=fields, **held[2])
     else:
         out = carry(data, surface, fields=fields, **maps)
-    data.geometry.__dict__["_boundary"] = (surface, out.geometry, maps)
+    kept["boundary"] = (surface, out.geometry, maps)
     return out
 
 
@@ -274,10 +277,12 @@ def extract_surface(data, faces=None, fields=None):
         fresh = _fresh_boundary(data, fields)
         if fresh is not None:
             return fresh
-        kept = data.geometry.__dict__.get("_boundary")
-        if (kept is not None and "faces_to_cells" in kept[2]
+        from tack.dataset.algorithms._common import mesh_kept
+
+        held = mesh_kept(data).get("boundary")
+        if (held is not None and "faces_to_cells" in held[2]
                 and not (data.topology.dimension == 3 and _has_order_two(data, fields))):
-            return _on_boundary(data, kept[0], fields, **kept[2])
+            return _on_boundary(data, held[0], fields, **held[2])
     boundary = faces is None
     if boundary:
         from tack.dataset.algorithms.boundary_faces import boundary_faces
