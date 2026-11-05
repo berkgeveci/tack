@@ -7873,8 +7873,9 @@ count them, from the topology's <code>offset</code>), clipped to the grid -- eve
 <code>rate</code>-th along each axis (a number, or one per axis): a structured grid
 of the same kind, an image's coordinates still uniform, a rectilinear
 grid's axes cut, explicit points taken. VTK's <code>vtkExtractGrid</code>. A flat
-image or rectilinear grid also takes VTK's three axes' extent and rates,
-the flat axis's pair and rate ignored.</p>
+grid also takes VTK's three axes' extent and rates, the flat axis's pair and
+rate ignored: an image's or rectilinear grid's flat axis is where its
+coordinates have one point, a curvilinear grid's where the pair is (0, 0).</p>
 <p>An axis of one point is dropped: a k-plane of a 3D grid is a 2D grid,
 whose cells are faces of the 3D grid's. Point fields come along at the
 points kept; each cell takes the cell fields, marks and ids of the input
@@ -7885,12 +7886,7 @@ point's index, so its extent is the box's (with <code>rate</code> 1).</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/extract_extent.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 75</span>
-<span class="normal"> 76</span>
-<span class="normal"> 77</span>
-<span class="normal"> 78</span>
-<span class="normal"> 79</span>
-<span class="normal"> 80</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 80</span>
 <span class="normal"> 81</span>
 <span class="normal"> 82</span>
 <span class="normal"> 83</span>
@@ -7945,7 +7941,13 @@ point's index, so its extent is the box's (with <code>rate</code> 1).</p>
 <span class="normal">132</span>
 <span class="normal">133</span>
 <span class="normal">134</span>
-<span class="normal">135</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">135</span>
+<span class="normal">136</span>
+<span class="normal">137</span>
+<span class="normal">138</span>
+<span class="normal">139</span>
+<span class="normal">140</span>
+<span class="normal">141</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">extract_extent</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">extent</span><span class="p">,</span> <span class="n">rate</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The points of ``data``, a structured grid, in the box ``extent`` -- one</span>
 <span class="sd">    (low, high) pair of point indices per axis, both included, or VTK&#39;s flat</span>
@@ -7954,8 +7956,9 @@ point's index, so its extent is the box's (with <code>rate</code> 1).</p>
 <span class="sd">    ``rate``-th along each axis (a number, or one per axis): a structured grid</span>
 <span class="sd">    of the same kind, an image&#39;s coordinates still uniform, a rectilinear</span>
 <span class="sd">    grid&#39;s axes cut, explicit points taken. VTK&#39;s ``vtkExtractGrid``. A flat</span>
-<span class="sd">    image or rectilinear grid also takes VTK&#39;s three axes&#39; extent and rates,</span>
-<span class="sd">    the flat axis&#39;s pair and rate ignored.</span>
+<span class="sd">    grid also takes VTK&#39;s three axes&#39; extent and rates, the flat axis&#39;s pair and</span>
+<span class="sd">    rate ignored: an image&#39;s or rectilinear grid&#39;s flat axis is where its</span>
+<span class="sd">    coordinates have one point, a curvilinear grid&#39;s where the pair is (0, 0).</span>
 
 <span class="sd">    An axis of one point is dropped: a k-plane of a 3D grid is a 2D grid,</span>
 <span class="sd">    whose cells are faces of the 3D grid&#39;s. Point fields come along at the</span>
@@ -10921,9 +10924,10 @@ points are the same; cell fields go to each cell's tetrahedra.</p>
 
     <div class="doc doc-contents first">
 
-        <p>Every 2D cell as triangles: a quad or pixel in 2, a polygon in a fan from its
-first point; other cells are left out. The points are the same; cell fields
-go to each cell's triangles.</p>
+        <p>Every 2D cell as triangles: a quad or pixel in 2, a polygon of <code>n</code> corners in
+<code>n - 2</code> by ear cutting in its plane (as VTK's vtkTriangleFilter), so a concave
+one is covered once, each triangle wound as the polygon; other cells are left
+out. The points are the same; cell fields go to each cell's triangles.</p>
 
 
             <details class="mkdocstrings-source">
@@ -10953,11 +10957,17 @@ go to each cell's triangles.</p>
 <span class="normal">38</span>
 <span class="normal">39</span>
 <span class="normal">40</span>
-<span class="normal">41</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">triangulate</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Every 2D cell as triangles: a quad or pixel in 2, a polygon in a fan from its</span>
-<span class="sd">    first point; other cells are left out. The points are the same; cell fields</span>
-<span class="sd">    go to each cell&#39;s triangles.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Every 2D cell as triangles: a quad or pixel in 2, a polygon of ``n`` corners in</span>
+<span class="sd">    ``n - 2`` by ear cutting in its plane (as VTK&#39;s vtkTriangleFilter), so a concave</span>
+<span class="sd">    one is covered once, each triangle wound as the polygon; other cells are left</span>
+<span class="sd">    out. The points are the same; cell fields go to each cell&#39;s triangles.&quot;&quot;&quot;</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.ghosts</span><span class="w"> </span><span class="kn">import</span> <span class="n">visible</span>
 
     <span class="n">data</span> <span class="o">=</span> <span class="n">visible</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
@@ -10977,7 +10987,11 @@ go to each cell's triangles.</p>
     <span class="n">connectivity</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">3</span> <span class="o">*</span> <span class="n">count</span><span class="p">,),</span> <span class="n">odt</span><span class="p">)</span>
     <span class="n">sources</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">count</span><span class="p">,),</span> <span class="n">data</span><span class="o">.</span><span class="n">id_dtype</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">count</span><span class="p">:</span>
-        <span class="n">_fans</span><span class="p">(</span><span class="n">loop_offsets</span><span class="p">,</span> <span class="n">loop_points</span><span class="p">,</span> <span class="n">starts</span><span class="p">,</span> <span class="n">connectivity</span><span class="p">,</span> <span class="n">sources</span><span class="p">)</span>
+        <span class="c1"># The corners left of each polygon as it is cut, linked within its range.</span>
+        <span class="n">after</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">size_of</span><span class="p">(</span><span class="n">loop_points</span><span class="p">),),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">)</span>
+        <span class="n">before</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">size_of</span><span class="p">(</span><span class="n">loop_points</span><span class="p">),),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">)</span>
+        <span class="n">_ears</span><span class="p">(</span><span class="n">loop_offsets</span><span class="p">,</span> <span class="n">loop_points</span><span class="p">,</span> <span class="n">materialize</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="n">starts</span><span class="p">,</span> <span class="n">after</span><span class="p">,</span>
+              <span class="n">before</span><span class="p">,</span> <span class="n">connectivity</span><span class="p">,</span> <span class="n">sources</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">_pieces_topology</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">connectivity</span><span class="p">,</span> <span class="n">sources</span><span class="p">,</span> <span class="n">count</span><span class="p">,</span> <span class="n">shapes</span><span class="o">.</span><span class="n">TRIANGLE</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="n">fields</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -11439,7 +11453,9 @@ sub-cell of their cell. Segments, quads, pixels, hexahedra and voxels.</p>
 
 
 <a href="#tack.dataset.algorithms.transform.transform" class="headerlink" title="Permanent link">&para;</a></h3>
-<div class="doc-signature highlight"><pre><span></span><code><span class="nf">transform</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">matrix</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">transform</span><span class="p">(</span>
+    <span class="n">data</span><span class="p">,</span> <span class="n">matrix</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">vectors</span><span class="o">=</span><span class="p">(),</span> <span class="n">normals</span><span class="o">=</span><span class="p">()</span>
+<span class="p">)</span>
 </code></pre></div>
 
     <div class="doc doc-contents first">
@@ -11454,53 +11470,61 @@ so a rotation far from zero loses nothing.</p>
 too), in double precision, and no position is stored -- as VTK's image data
 with a direction matrix holds it. A singular map (a projection) gives the
 positions themselves.</p>
+<p>Fields are carried as they are, but <code>vectors</code> and <code>normals</code> (field names,
+or one): a vector -- a velocity, a displacement -- turns with the map, its
+linear part applied to it, and a normal takes the inverse transpose of that
+part, made unit length again, so it stays normal to the moved surface. VTK's
+vtkTransformFilter does so to the active vectors and normals, which the VTK
+algorithm <code>Transform</code> takes by default; Tack keeps no roles, so here they
+are named. Each is a 3-vector field; normals need an invertible map.</p>
 
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/transform.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">26</span>
-<span class="normal">27</span>
-<span class="normal">28</span>
-<span class="normal">29</span>
-<span class="normal">30</span>
-<span class="normal">31</span>
-<span class="normal">32</span>
-<span class="normal">33</span>
-<span class="normal">34</span>
-<span class="normal">35</span>
-<span class="normal">36</span>
-<span class="normal">37</span>
-<span class="normal">38</span>
-<span class="normal">39</span>
-<span class="normal">40</span>
-<span class="normal">41</span>
-<span class="normal">42</span>
-<span class="normal">43</span>
-<span class="normal">44</span>
-<span class="normal">45</span>
-<span class="normal">46</span>
-<span class="normal">47</span>
-<span class="normal">48</span>
-<span class="normal">49</span>
-<span class="normal">50</span>
-<span class="normal">51</span>
-<span class="normal">52</span>
-<span class="normal">53</span>
-<span class="normal">54</span>
-<span class="normal">55</span>
-<span class="normal">56</span>
-<span class="normal">57</span>
-<span class="normal">58</span>
-<span class="normal">59</span>
-<span class="normal">60</span>
-<span class="normal">61</span>
-<span class="normal">62</span>
-<span class="normal">63</span>
-<span class="normal">64</span>
-<span class="normal">65</span>
-<span class="normal">66</span>
-<span class="normal">67</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">transform</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">matrix</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 60</span>
+<span class="normal"> 61</span>
+<span class="normal"> 62</span>
+<span class="normal"> 63</span>
+<span class="normal"> 64</span>
+<span class="normal"> 65</span>
+<span class="normal"> 66</span>
+<span class="normal"> 67</span>
+<span class="normal"> 68</span>
+<span class="normal"> 69</span>
+<span class="normal"> 70</span>
+<span class="normal"> 71</span>
+<span class="normal"> 72</span>
+<span class="normal"> 73</span>
+<span class="normal"> 74</span>
+<span class="normal"> 75</span>
+<span class="normal"> 76</span>
+<span class="normal"> 77</span>
+<span class="normal"> 78</span>
+<span class="normal"> 79</span>
+<span class="normal"> 80</span>
+<span class="normal"> 81</span>
+<span class="normal"> 82</span>
+<span class="normal"> 83</span>
+<span class="normal"> 84</span>
+<span class="normal"> 85</span>
+<span class="normal"> 86</span>
+<span class="normal"> 87</span>
+<span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">transform</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">matrix</span><span class="p">,</span> <span class="n">fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">vectors</span><span class="o">=</span><span class="p">(),</span> <span class="n">normals</span><span class="o">=</span><span class="p">()):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The geometry under an affine map: a 4x4 matrix (its last row 0 0 0 1) or 3x4,</span>
 <span class="sd">    applied to each position as a column (Viskores&#39; PointTransform, VTK&#39;s</span>
 <span class="sd">    vtkTransformFilter). On a dataset with an origin the map moves the origin,</span>
@@ -11511,7 +11535,15 @@ positions themselves.</p>
 <span class="sd">    (``UniformCoordinates``; the direction may be any invertible matrix, a shear</span>
 <span class="sd">    too), in double precision, and no position is stored -- as VTK&#39;s image data</span>
 <span class="sd">    with a direction matrix holds it. A singular map (a projection) gives the</span>
-<span class="sd">    positions themselves.&quot;&quot;&quot;</span>
+<span class="sd">    positions themselves.</span>
+
+<span class="sd">    Fields are carried as they are, but ``vectors`` and ``normals`` (field names,</span>
+<span class="sd">    or one): a vector -- a velocity, a displacement -- turns with the map, its</span>
+<span class="sd">    linear part applied to it, and a normal takes the inverse transpose of that</span>
+<span class="sd">    part, made unit length again, so it stays normal to the moved surface. VTK&#39;s</span>
+<span class="sd">    vtkTransformFilter does so to the active vectors and normals, which the VTK</span>
+<span class="sd">    algorithm ``Transform`` takes by default; Tack keeps no roles, so here they</span>
+<span class="sd">    are named. Each is a 3-vector field; normals need an invertible map.&quot;&quot;&quot;</span>
     <span class="n">m</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">matrix</span><span class="p">,</span> <span class="nb">float</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">m</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">):</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="n">m</span><span class="p">[</span><span class="mi">3</span><span class="p">],</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">]):</span>
@@ -11519,27 +11551,20 @@ positions themselves.</p>
         <span class="n">m</span> <span class="o">=</span> <span class="n">m</span><span class="p">[:</span><span class="mi">3</span><span class="p">]</span>
     <span class="k">if</span> <span class="n">m</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;transform takes a 4x4 or 3x4 matrix, not </span><span class="si">{</span><span class="n">m</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="n">origin</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">origin</span><span class="p">):</span>
-        <span class="n">origin</span> <span class="o">=</span> <span class="n">m</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">3</span><span class="p">]</span> <span class="o">@</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">origin</span><span class="p">)</span> <span class="o">+</span> <span class="n">m</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">]</span>
-        <span class="n">m</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hstack</span><span class="p">([</span><span class="n">m</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">3</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">))])</span>
-    <span class="n">values</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span>
-    <span class="c1"># A singular map (a projection) flattens the image: its positions are stored.</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">UniformCoordinates</span><span class="p">)</span> <span class="ow">and</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">det</span><span class="p">(</span><span class="n">m</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">3</span><span class="p">])</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">:</span>
-        <span class="n">image</span> <span class="o">=</span> <span class="n">UniformCoordinates</span><span class="p">(</span><span class="n">values</span><span class="o">.</span><span class="n">dims</span><span class="p">,</span> <span class="n">m</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">3</span><span class="p">]</span> <span class="o">@</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">values</span><span class="o">.</span><span class="n">_origin</span><span class="p">)</span> <span class="o">+</span> <span class="n">m</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">],</span>
-                                   <span class="n">values</span><span class="o">.</span><span class="n">_spacing</span><span class="p">,</span> <span class="n">m</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">3</span><span class="p">]</span> <span class="o">@</span> <span class="n">values</span><span class="o">.</span><span class="n">_matrix</span><span class="p">,</span>
-                                   <span class="n">dtype</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
-        <span class="n">out</span> <span class="o">=</span> <span class="n">_moved</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">image</span><span class="p">,</span> <span class="n">fields</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">origin</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">out</span><span class="o">.</span><span class="n">origin</span> <span class="o">=</span> <span class="n">origin</span>
-        <span class="k">return</span> <span class="n">out</span>
-    <span class="n">n</span> <span class="o">=</span> <span class="n">size_of</span><span class="p">(</span><span class="n">values</span><span class="p">)</span>
-    <span class="n">out</span> <span class="o">=</span> <span class="n">_vectors</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
-        <span class="n">_affine</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="o">*</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">m</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)),</span> <span class="n">out</span><span class="p">)</span>
-    <span class="n">out</span> <span class="o">=</span> <span class="n">_moved</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">fields</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">origin</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">out</span><span class="o">.</span><span class="n">origin</span> <span class="o">=</span> <span class="n">origin</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">_placed</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">fields</span><span class="p">)</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.dataset</span><span class="w"> </span><span class="kn">import</span> <span class="n">is_field_key</span>
+
+    <span class="n">vectors</span> <span class="o">=</span> <span class="p">[</span><span class="n">vectors</span><span class="p">]</span> <span class="k">if</span> <span class="n">is_field_key</span><span class="p">(</span><span class="n">vectors</span><span class="p">)</span> <span class="k">else</span> <span class="nb">list</span><span class="p">(</span><span class="n">vectors</span> <span class="ow">or</span> <span class="p">())</span>
+    <span class="n">normals</span> <span class="o">=</span> <span class="p">[</span><span class="n">normals</span><span class="p">]</span> <span class="k">if</span> <span class="n">is_field_key</span><span class="p">(</span><span class="n">normals</span><span class="p">)</span> <span class="k">else</span> <span class="nb">list</span><span class="p">(</span><span class="n">normals</span> <span class="ow">or</span> <span class="p">())</span>
+    <span class="n">linear</span> <span class="o">=</span> <span class="n">m</span><span class="p">[:,</span> <span class="p">:</span><span class="mi">3</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">vectors</span><span class="p">:</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">_mapped</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">linear</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">normals</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">det</span><span class="p">(</span><span class="n">linear</span><span class="p">)</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;a singular map (a projection) has no normals to give&quot;</span><span class="p">)</span>
+        <span class="n">inverse_transpose</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">inv</span><span class="p">(</span><span class="n">linear</span><span class="p">)</span><span class="o">.</span><span class="n">T</span>
+        <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">normals</span><span class="p">:</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">fields</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">_mapped</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">inverse_transpose</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">out</span>
 </code></pre></div></td></tr></table></div>
             </details>
