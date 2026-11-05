@@ -192,6 +192,13 @@ def texture3d(source_array, shape=None, interp='linear'):
 
 #: Public submodules, loaded on first use, so ``import tack`` alone reaches
 #: ``tack.arrays.CountingArray``. ``dataset`` and ``interop`` are tack-vis's.
+#: How to install tack-vis, which is not on PyPI: from the repository, at this
+#: release's tag (a development install has no tag to name).
+_TACK_VIS_INSTALL = (
+    "pip install 'tack-vis @ git+https://github.com/Kitware/tack"
+    + ("" if "+" in __version__ or "dev" in __version__ else f"@v{__version__}")
+    + "#subdirectory=packages/tack-vis'")
+
 _SUBMODULES = frozenset({"algorithms", "arrays", "cache", "communication", "math", "random",
                          "dataset", "interop"})
 
@@ -205,7 +212,9 @@ def __getattr__(name):
             if error.name != f"{__name__}.{name}":
                 raise
             raise AttributeError(f"module 'tack' has no attribute {name!r}: tack.{name} is "
-                                 f"in the tack-vis package, which is not installed") from error
+                                 f"in the tack-vis package, which is not installed. It is "
+                                 f"not on PyPI; install it from the repository:\n"
+                                 f"    {_TACK_VIS_INSTALL}") from error
     raise AttributeError(f"module 'tack' has no attribute {name!r}")
 
 

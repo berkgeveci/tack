@@ -504,7 +504,9 @@ jobs:
   # Every other job runs the source tree. This one builds both wheels and
   # installs them in a fresh environment, as a user would, so a packaging
   # mistake (tack-vis shipping its own tack/__init__.py, which runs instead
-  # of tack-core's when it comes first) fails here.
+  # of tack-core's when it comes first) fails here. tack-core goes to PyPI
+  # alone (its sdist too), so it is also installed alone, from the wheel and
+  # from the sdist, and must run without tack-vis.
   wheels:
     name: Built wheels install and import
     runs-on: ubuntu-latest
@@ -520,10 +522,11 @@ jobs:
           cache-dependency-glob: "**/uv.lock"
           python-version: "3.13"
 
-      - name: Build both wheels
+      - name: Build both wheels, and tack-core's sdist
         run: |
-          uv build --wheel --out-dir dist packages/tack-core
+          uv build --out-dir dist packages/tack-core
           uv build --wheel --out-dir dist packages/tack-vis
+          uvx twine check --strict dist/tack_core-*
           python3 - <<'EOF'
           import glob, zipfile
           vis = zipfile.ZipFile(glob.glob("dist/tack_vis-*.whl")[0]).namelist()
@@ -546,6 +549,14 @@ jobs:
           /tmp/wheelenv/bin/python -m pytest -q \
             packages/tack-vis/tests/test_namespace.py \
             packages/tack-vis/tests/test_algorithm_contracts.py
+
+      - name: tack-core alone, from its wheel and from its sdist
+        run: |
+          for built in "$(ls dist/tack_core-*.whl)" "$(ls dist/tack_core-*.tar.gz)"; do
+            rm -rf /tmp/coreenv && uv venv -q /tmp/coreenv --python 3.13
+            VIRTUAL_ENV=/tmp/coreenv uv pip install -q "${built}[cpu]"
+            (cd /tmp && /tmp/coreenv/bin/python "$GITHUB_WORKSPACE/tools/check_core_install.py")
+          done
 
   # ── Examples ───────────────────────────────────────────────────────
   # The shipped examples are the code new users copy, and they exercise
