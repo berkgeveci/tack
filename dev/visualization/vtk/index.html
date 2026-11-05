@@ -5439,18 +5439,23 @@ their cell data.</p>
 </tr>
 <tr>
 <td>Cutting</td>
-<td><code>Contour</code>, <code>Slice</code>, <code>SlicePlane</code>, <code>Clip</code></td>
-<td><code>vtkUnstructuredGrid</code></td>
+<td><code>Contour</code>, <code>Slice</code>, <code>SlicePlane</code></td>
+<td><code>vtkPolyData</code></td>
+</tr>
+<tr>
+<td></td>
+<td><code>Clip</code></td>
+<td><code>vtkUnstructuredGrid</code>; <code>vtkPolyData</code> for a <code>vtkPolyData</code> input</td>
 </tr>
 <tr>
 <td>Surfaces and edges</td>
 <td><code>ExtractSurface</code>, <code>BoundaryFaces</code>, <code>ExtractEdges</code>, <code>FeatureEdges</code>, <code>SurfaceNormals</code></td>
-<td><code>vtkUnstructuredGrid</code></td>
+<td><code>vtkPolyData</code></td>
 </tr>
 <tr>
 <td>Shapes for drawing</td>
 <td><code>Tubes</code>, <code>Glyphs</code></td>
-<td><code>vtkUnstructuredGrid</code></td>
+<td><code>vtkPolyData</code></td>
 </tr>
 <tr>
 <td>Connectivity and winding</td>
@@ -5465,12 +5470,17 @@ their cell data.</p>
 <tr>
 <td></td>
 <td><code>MergePoints</code></td>
-<td><code>vtkUnstructuredGrid</code></td>
+<td><code>vtkUnstructuredGrid</code>; <code>vtkPolyData</code> for a <code>vtkPolyData</code> input</td>
 </tr>
 <tr>
 <td>Changing cell types</td>
-<td><code>Tetrahedralize</code>, <code>Triangulate</code>, <code>AsPolyhedra</code>, <code>AsPolygons</code>, <code>Shrink</code>, <code>Subdivide</code></td>
+<td><code>Tetrahedralize</code>, <code>AsPolyhedra</code>, <code>Shrink</code>, <code>Subdivide</code></td>
 <td><code>vtkUnstructuredGrid</code></td>
+</tr>
+<tr>
+<td></td>
+<td><code>Triangulate</code>, <code>AsPolygons</code></td>
+<td><code>vtkPolyData</code></td>
 </tr>
 <tr>
 <td>Moving the geometry</td>
@@ -5480,7 +5490,7 @@ their cell data.</p>
 <tr>
 <td></td>
 <td><code>Warp</code>, <code>Cylindrical</code>, <code>Spherical</code></td>
-<td>a structured grid for a structured input, else <code>vtkUnstructuredGrid</code></td>
+<td>a structured grid for a structured input, <code>vtkPolyData</code> for a <code>vtkPolyData</code>, else <code>vtkUnstructuredGrid</code></td>
 </tr>
 <tr>
 <td>Measures and quality</td>
@@ -5530,12 +5540,12 @@ their cell data.</p>
 <tr>
 <td></td>
 <td><code>Streamlines</code>, <code>Advect</code> (seeds on port 1, or <code>seeds=</code>)</td>
-<td><code>vtkUnstructuredGrid</code></td>
+<td><code>vtkPolyData</code></td>
 </tr>
 <tr>
 <td>Point clouds</td>
 <td><code>ExtractPoints</code>, <code>ThresholdPoints</code>, <code>MaskPoints</code>, <code>Outliers</code>, <code>VoxelDownsample</code>, <code>HaloCatalog</code></td>
-<td><code>vtkUnstructuredGrid</code></td>
+<td><code>vtkPolyData</code></td>
 </tr>
 <tr>
 <td></td>
@@ -5575,7 +5585,7 @@ their cell data.</p>
 <tr>
 <td></td>
 <td><code>Advection</code>, <code>Pathlines</code>, <code>Streaklines</code> (seeds on port 1, or <code>seeds=</code>)</td>
-<td><code>vtkUnstructuredGrid</code></td>
+<td><code>vtkPolyData</code></td>
 </tr>
 </tbody>
 </table>
@@ -5744,7 +5754,9 @@ between them:</p>
 <p><code>compute</code> runs once per piece of a partitioned input. An algorithm whose
 answer needs every piece overrides <code>execute(data)</code> instead. <code>OUTPUT</code> names
 the output's VTK type for a dataset input: <code>"vtkUnstructuredGrid"</code> by
-default, or <code>None</code> for the input's own type. A filter of your own
+default, <code>"vtkPolyData"</code> for a filter of points, lines and surfaces (its cells
+become the polydata's vertices, lines and polygons), or <code>None</code> for the input's own
+type. A filter of your own
 (<a href="../write-a-filter/">Write a filter</a>) goes into <code>compute</code> the same way.</p>
 <p>To wrap a <code>tack.dataset</code> function as it is, name it instead: <code>FUNCTION =
 "threshold"</code> gives the class a parameter for each of its arguments and a
