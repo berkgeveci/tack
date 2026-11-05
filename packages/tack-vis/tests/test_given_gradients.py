@@ -129,3 +129,16 @@ def test_a_given_gradient_goes_with_its_field_through_filters(backend):
     assert out.num_cells == int(keep.sum())
     assert out.fields["u"].gradient is not None
     np.testing.assert_allclose(td.gradients(out, "u").values.numpy(), given[keep])
+
+
+def test_a_field_whose_gradient_cannot_be_carried_is_left_out(backend):
+    data = _data()
+    u = td.interpolate(data, _u, td.H1(data))
+    zero = np.zeros((data.num_cells, 3), np.float32)
+    data.fields["u"] = td.Field(u.space, u.values, gradient=_per_cell(data, zero))
+    data.fields["w"] = u
+    n = data.num_points
+    vertices = td.UnstructuredTopology([1] * n, list(range(n + 1)), list(range(n)), num_points=n)
+    out = td.carry(data, vertices, points=td.Same())      # no cells: the gradient stays
+    assert "w" in out.fields
+    assert "u" not in out.fields
