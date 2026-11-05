@@ -150,16 +150,109 @@ def _fan_counts(loop_offsets, counts):
         counts[c] = max(loop_offsets[c + 1] - loop_offsets[c] - 2, 0)
 
 
+@tack.func
+def _plane_uv(p, drop):
+    """``p``'s coordinates in the plane that drops axis ``drop``, the other two in
+    cyclic order (so the plane's normal is the dropped axis, sign kept)."""
+    u = p[1]
+    v = p[2]
+    if drop == 1:
+        u = p[2]
+        v = p[0]
+    elif drop == 2:
+        u = p[0]
+        v = p[1]
+    return u, v
+
+
+@tack.func
+def _turn(x, loop_points, first, a, b, c, drop):
+    """Twice the signed area of the triangle of loop corners ``a``, ``b``, ``c`` in the
+    plane (``_plane_uv``)."""
+    au, av = _plane_uv(x[loop_points[first + a]], drop)
+    bu, bv = _plane_uv(x[loop_points[first + b]], drop)
+    cu, cv = _plane_uv(x[loop_points[first + c]], drop)
+    return (bu - au) * (cv - av) - (bv - av) * (cu - au)
+
+
 @tack.kernel
-def _fans(loop_offsets, loop_points, starts, connectivity, sources):
+def _ears(loop_offsets, loop_points, x, starts, after, before, connectivity, sources):
+    # Each polygon by ear cutting in its plane -- the plane of its Newell normal's
+    # largest component -- so a concave one is covered once (a fan from its first
+    # corner covers part of it twice and part not at all). An ear is a corner
+    # turning as the polygon does whose triangle holds no other corner; cutting it
+    # leaves a polygon of one corner fewer. ``after`` and ``before`` link the
+    # corners left, within the polygon's own range. Where no ear is left (a
+    # degenerate remainder) the rest is a fan, so every polygon of n corners gives
+    # n - 2 triangles, each wound as the polygon.
     for c in range(len(loop_offsets) - 1):
         first = loop_offsets[c]
+        n = loop_offsets[c + 1] - first
         at = starts[c]
-        for k in range(loop_offsets[c + 1] - first - 2):
-            connectivity[3 * (at + k)] = loop_points[first]
-            connectivity[3 * (at + k) + 1] = loop_points[first + k + 1]
-            connectivity[3 * (at + k) + 2] = loop_points[first + k + 2]
-            sources[at + k] = c
+        if n >= 3:
+            nx = 0.0
+            ny = 0.0
+            nz = 0.0
+            for k in range(n):
+                p = x[loop_points[first + k]]
+                q = x[loop_points[first + (k + 1) % n]]
+                nx += (p[1] - q[1]) * (p[2] + q[2])
+                ny += (p[2] - q[2]) * (p[0] + q[0])
+                nz += (p[0] - q[0]) * (p[1] + q[1])
+            drop = 2
+            sense = nz
+            if abs(nx) >= abs(ny) and abs(nx) >= abs(nz):
+                drop = 0
+                sense = nx
+            elif abs(ny) >= abs(nz):
+                drop = 1
+                sense = ny
+            sign = 1.0
+            if sense < 0.0:
+                sign = -1.0
+            for k in range(n):
+                after[first + k] = (k + 1) % n
+                before[first + k] = (k + n - 1) % n
+            left = n
+            i = 0
+            misses = 0
+            t = 0
+            while left > 3 and misses < left:
+                a = before[first + i]
+                b = after[first + i]
+                ear = sign * _turn(x, loop_points, first, a, i, b, drop) > 0.0
+                if ear:
+                    j = after[first + b]
+                    while ear and j != a:
+                        inside = (sign * _turn(x, loop_points, first, a, i, j, drop) > 0.0
+                                  and sign * _turn(x, loop_points, first, i, b, j, drop) > 0.0
+                                  and sign * _turn(x, loop_points, first, b, a, j, drop) > 0.0)
+                        if inside:
+                            ear = False
+                        j = after[first + j]
+                if ear:
+                    connectivity[3 * (at + t)] = loop_points[first + a]
+                    connectivity[3 * (at + t) + 1] = loop_points[first + i]
+                    connectivity[3 * (at + t) + 2] = loop_points[first + b]
+                    sources[at + t] = c
+                    t += 1
+                    after[first + a] = b
+                    before[first + b] = a
+                    left -= 1
+                    i = a
+                    misses = 0
+                else:
+                    i = b
+                    misses += 1
+            # The last triangle, or a fan of a degenerate remainder from corner i.
+            j = after[first + i]
+            while t < n - 2:
+                connectivity[3 * (at + t)] = loop_points[first + i]
+                connectivity[3 * (at + t) + 1] = loop_points[first + j]
+                connectivity[3 * (at + t) + 2] = loop_points[first + after[first + j]]
+                sources[at + t] = c
+                t += 1
+                j = after[first + j]
 
 
 @tack.kernel
