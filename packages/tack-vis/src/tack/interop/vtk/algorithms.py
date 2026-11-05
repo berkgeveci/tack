@@ -157,43 +157,32 @@ _TREES = (vtkMultiBlockDataSet, vtkPartitionedDataSetCollection)
 # A Tack dataset keeps what it derives from its topology -- locators, faces, point
 # links, groups -- on the topology, so filters that read one VTK dataset (several
 # on one input, or one run again after a parameter changed) build that once when
-# they share one Tack dataset. Kept by the VTK object's address, modification time
-# and time step: the modification time is a global counter, so the same object
-# modified, or a later one at the same address, does not match. An entry goes when
-# its VTK object is deleted, and holds nothing that keeps that object alive. Beside
-# the dataset sharing VTK's memory, an entry keeps its copy on each device a filter
-# asked for (``device=``), so the data moves there once.
+# they share one Tack dataset. The entry is an attribute of the VTK dataset's
+# Python wrapper (``_CACHE``): VTK keeps a wrapper's attributes while its C++ object
+# lives, on every later wrapper of it (the one GetInputData gives in the next
+# filter), and frees them with the object, so an entry lives exactly as long as its
+# dataset, with no observer to call (a DeleteEvent observer crashed Python's
+# collector, VTK bugs 19 in the vault). On VTK master a wrapper costs the same however
+# many objects keep attributes (0.6 us); VTK 9.7.1 sweeps them at every wrapper (50 us
+# with 10,000), as it does the attributes the pythonic API gives every wrapper.
+#
+# An entry is stale when the dataset's modification time or time step differs from
+# what it was cached at (``_key``). The modification time follows VTK's contract: it
+# sees a change made with ``Modified()`` (an array's or the points'), arrays added or
+# removed, not values written in place without it, nor ``InsertNextCell``. Tack shares
+# VTK's memory, so such values reach its fields, but what it derived from the old
+# state (a locator, the faces) is kept: call ``Modified()`` after changing a dataset
+# in place, as VTK's own filters need. Beside the dataset sharing VTK's memory, an
+# entry keeps its copy on each device a filter asked for (``device=``), so the data
+# moves there once.
 
-_datasets = {}          # address -> ((modification time, time step), {device: DataSet})
-
-#: Addresses of VTK datasets deleted since the cache was last used. A DeleteEvent only
-#: notes one, and its entry goes at the next use (``_drop_deleted``), outside whatever
-#: freed the dataset.
-_deleted = []
-
-#: Each DeleteEvent observer, by its dataset's address, kept here until it has fired.
-#: Referenced only by its VTK object, an observer is garbage when Python's collector
-#: frees that object in a cycle (a traceback's frame holding it): the collector clears
-#: the function's globals and closure, then the deletion calls it, and Python crashed.
-_observers = {}
-
-
-def _note_deleted(address):
-    """A DeleteEvent observer noting ``address`` deleted."""
-    def note(caller, event):
-        _deleted.append(address)
-    return note
-
-
-def _drop_deleted():
-    """Drop the entries, and observers, of the VTK datasets deleted since the last use."""
-    while _deleted:
-        address = _deleted.pop()
-        _datasets.pop(address, None)
-        _observers.pop(address, None)
+#: The attribute of a VTK dataset's wrapper that holds its entry: ``((modification
+#: time, time step), {device: DataSet})``.
+_CACHE = "_tack_cache"
 
 
 def _key(vtk_data):
+    """What an entry is valid for: the dataset's modification time and time step."""
     from tack.interop.vtk import _time_key
 
     info = vtk_data.GetInformation()
@@ -202,15 +191,13 @@ def _key(vtk_data):
 
 def _remember(vtk_data, data):
     """Keep ``data`` as the Tack dataset of ``vtk_data`` as it is now."""
-    _drop_deleted()
-    address = vtk_data.GetAddressAsString("vtkObject")
-    if address not in _datasets:
-        # The address, not the caller: a DeleteEvent's caller is None. Only noted
-        # (see ``_deleted``); a later object at this address gets its own observer,
-        # since the noted address is dropped before it is remembered.
-        _observers[address] = observer = _note_deleted(address)
-        vtk_data.AddObserver("DeleteEvent", observer)
-    _datasets[address] = (_key(vtk_data), {None: data})
+    setattr(vtk_data, _CACHE, (_key(vtk_data), {None: data}))
+
+
+def _entry(vtk_data):
+    """``vtk_data``'s entry, or ``None`` (none, or a stale one)."""
+    entry = getattr(vtk_data, _CACHE, None)
+    return entry if entry is not None and entry[0] == _key(vtk_data) else None
 
 
 def _as_dataset(vtk_data, device=None):
@@ -233,11 +220,10 @@ def _as_dataset(vtk_data, device=None):
             data = vtk_to_dataset(vtk_data, dtype=None, copy=False)
             return data if device is None else data.to_device(device)
         return data
-    _drop_deleted()
-    entry = _datasets.get(vtk_data.GetAddressAsString("vtkObject"))
-    if entry is None or entry[0] != _key(vtk_data):
+    entry = _entry(vtk_data)
+    if entry is None:
         _remember(vtk_data, vtk_to_dataset(vtk_data, dtype=None, copy=False))
-        entry = _datasets[vtk_data.GetAddressAsString("vtkObject")]
+        entry = getattr(vtk_data, _CACHE)
     copies = entry[1]
     data = copies[None]
     if device is None or data.device == device:
@@ -740,7 +726,7 @@ class _FieldAlgorithm(TackAlgorithm):
             output.CompositeShallowCopy(result)
             return
         output.ShallowCopy(result)
-        kept = _datasets.get(result.GetAddressAsString("vtkObject"))
+        kept = _entry(result)
         if kept is not None:
             # The output is a new object over the same arrays: the same Tack dataset.
             _remember(output, kept[1][None])
