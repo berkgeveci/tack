@@ -12241,7 +12241,8 @@ spread evenly.</p>
 <span class="normal">37</span>
 <span class="normal">38</span>
 <span class="normal">39</span>
-<span class="normal">40</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">40</span>
+<span class="normal">41</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">cell_centers</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Each cell&#39;s center, where the geometry maps its parametric center: a field on cells.</span>
 <span class="sd">    That is ``values_at_centers(data, data.geometry)``, and not the centroid on a</span>
@@ -12256,7 +12257,8 @@ spread evenly.</p>
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="s2">&quot;reference_cells&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">):</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.algorithms.project</span><span class="w"> </span><span class="kn">import</span> <span class="n">_distinct_point_means</span>
 
-        <span class="n">for_each</span><span class="p">(</span><span class="n">_distinct_point_means</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">materialize</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="n">out</span><span class="p">)</span>
+        <span class="n">for_each</span><span class="p">(</span><span class="n">_distinct_point_means</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">materialize</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="n">out</span><span class="p">,</span>
+                 <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">))</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">for_each</span><span class="p">(</span><span class="n">_centers</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">Field</span><span class="p">(</span><span class="n">Values</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">),</span> <span class="n">out</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">unit</span><span class="p">)</span>
@@ -12973,6 +12975,8 @@ corner) and is left out of that point's average, which is NaN only if no
 cell around the point is left (VTK leaves its inverse Jacobian unset there;
 Viskores adds nothing but still counts the cell). <code>flow_quantities</code> derives divergence, vorticity and
 the Q-criterion from a vector field's gradient.</p>
+<p>A field given its gradient (<code>Field(..., gradient=)</code>) gives that instead of its
+basis', evaluated at the same points and averaged the same way.</p>
 <p>On a polyhedral topology there is no reference element. A cell's gradient
 of point data is then Green-Gauss over its boundary: the faces walked
 outward and fanned from their points' means (the triangles <code>cell_geometry</code>
@@ -12986,59 +12990,7 @@ around each point.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/gradients.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">330</span>
-<span class="normal">331</span>
-<span class="normal">332</span>
-<span class="normal">333</span>
-<span class="normal">334</span>
-<span class="normal">335</span>
-<span class="normal">336</span>
-<span class="normal">337</span>
-<span class="normal">338</span>
-<span class="normal">339</span>
-<span class="normal">340</span>
-<span class="normal">341</span>
-<span class="normal">342</span>
-<span class="normal">343</span>
-<span class="normal">344</span>
-<span class="normal">345</span>
-<span class="normal">346</span>
-<span class="normal">347</span>
-<span class="normal">348</span>
-<span class="normal">349</span>
-<span class="normal">350</span>
-<span class="normal">351</span>
-<span class="normal">352</span>
-<span class="normal">353</span>
-<span class="normal">354</span>
-<span class="normal">355</span>
-<span class="normal">356</span>
-<span class="normal">357</span>
-<span class="normal">358</span>
-<span class="normal">359</span>
-<span class="normal">360</span>
-<span class="normal">361</span>
-<span class="normal">362</span>
-<span class="normal">363</span>
-<span class="normal">364</span>
-<span class="normal">365</span>
-<span class="normal">366</span>
-<span class="normal">367</span>
-<span class="normal">368</span>
-<span class="normal">369</span>
-<span class="normal">370</span>
-<span class="normal">371</span>
-<span class="normal">372</span>
-<span class="normal">373</span>
-<span class="normal">374</span>
-<span class="normal">375</span>
-<span class="normal">376</span>
-<span class="normal">377</span>
-<span class="normal">378</span>
-<span class="normal">379</span>
-<span class="normal">380</span>
-<span class="normal">381</span>
-<span class="normal">382</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">382</span>
 <span class="normal">383</span>
 <span class="normal">384</span>
 <span class="normal">385</span>
@@ -13056,7 +13008,65 @@ around each point.</p>
 <span class="normal">397</span>
 <span class="normal">398</span>
 <span class="normal">399</span>
-<span class="normal">400</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">400</span>
+<span class="normal">401</span>
+<span class="normal">402</span>
+<span class="normal">403</span>
+<span class="normal">404</span>
+<span class="normal">405</span>
+<span class="normal">406</span>
+<span class="normal">407</span>
+<span class="normal">408</span>
+<span class="normal">409</span>
+<span class="normal">410</span>
+<span class="normal">411</span>
+<span class="normal">412</span>
+<span class="normal">413</span>
+<span class="normal">414</span>
+<span class="normal">415</span>
+<span class="normal">416</span>
+<span class="normal">417</span>
+<span class="normal">418</span>
+<span class="normal">419</span>
+<span class="normal">420</span>
+<span class="normal">421</span>
+<span class="normal">422</span>
+<span class="normal">423</span>
+<span class="normal">424</span>
+<span class="normal">425</span>
+<span class="normal">426</span>
+<span class="normal">427</span>
+<span class="normal">428</span>
+<span class="normal">429</span>
+<span class="normal">430</span>
+<span class="normal">431</span>
+<span class="normal">432</span>
+<span class="normal">433</span>
+<span class="normal">434</span>
+<span class="normal">435</span>
+<span class="normal">436</span>
+<span class="normal">437</span>
+<span class="normal">438</span>
+<span class="normal">439</span>
+<span class="normal">440</span>
+<span class="normal">441</span>
+<span class="normal">442</span>
+<span class="normal">443</span>
+<span class="normal">444</span>
+<span class="normal">445</span>
+<span class="normal">446</span>
+<span class="normal">447</span>
+<span class="normal">448</span>
+<span class="normal">449</span>
+<span class="normal">450</span>
+<span class="normal">451</span>
+<span class="normal">452</span>
+<span class="normal">453</span>
+<span class="normal">454</span>
+<span class="normal">455</span>
+<span class="normal">456</span>
+<span class="normal">457</span>
+<span class="normal">458</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">gradients</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">at</span><span class="o">=</span><span class="s2">&quot;cells&quot;</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;The gradient of ``field`` -- ``H1``, ``L2`` or ``Constant``, scalar or vector --</span>
 <span class="sd">    at each cell&#39;s parametric center (``at=&quot;cells&quot;``) or at the points</span>
@@ -13084,6 +13094,9 @@ around each point.</p>
 <span class="sd">    Viskores adds nothing but still counts the cell). ``flow_quantities`` derives divergence, vorticity and</span>
 <span class="sd">    the Q-criterion from a vector field&#39;s gradient.</span>
 
+<span class="sd">    A field given its gradient (``Field(..., gradient=)``) gives that instead of its</span>
+<span class="sd">    basis&#39;, evaluated at the same points and averaged the same way.</span>
+
 <span class="sd">    On a polyhedral topology there is no reference element. A cell&#39;s gradient</span>
 <span class="sd">    of point data is then Green-Gauss over its boundary: the faces walked</span>
 <span class="sd">    outward and fanned from their points&#39; means (the triangles ``cell_geometry``</span>
@@ -13094,6 +13107,9 @@ around each point.</p>
 <span class="sd">    get zero. At the points, the cells&#39; gradients are averaged over the cells</span>
 <span class="sd">    around each point.&quot;&quot;&quot;</span>
     <span class="n">field</span> <span class="o">=</span> <span class="n">_with_basis</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">_field</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">))</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="s2">&quot;reference_cells&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span> <span class="ow">and</span> <span class="n">field</span><span class="o">.</span><span class="n">gradient</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;gradients of a field given its gradient on a mesh without &quot;</span>
+                                  <span class="s2">&quot;reference elements&quot;</span><span class="p">)</span>
     <span class="k">if</span> <span class="p">(</span><span class="ow">not</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="s2">&quot;reference_cells&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
             <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="p">(</span><span class="n">H1</span><span class="p">,</span> <span class="n">Constant</span><span class="p">))):</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;gradients of a field on </span><span class="si">{</span><span class="n">field</span><span class="o">.</span><span class="n">space</span><span class="si">!r}</span><span class="s2"> on a mesh &quot;</span>
@@ -13123,7 +13139,7 @@ around each point.</p>
         <span class="n">part</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">size_of</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">),),</span> <span class="n">arrays</span><span class="o">.</span><span class="n">dtype_of</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">))</span>
         <span class="k">if</span> <span class="n">part</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
             <span class="n">_component</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">part</span><span class="p">)</span>
-        <span class="n">rows</span> <span class="o">=</span> <span class="n">_scalar_gradients</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">Field</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="n">part</span><span class="p">),</span> <span class="n">at</span><span class="p">)</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="n">_scalar_gradients</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">Field</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="n">part</span><span class="p">,</span> <span class="n">gradient</span><span class="o">=</span><span class="n">_gradient_row</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">gradient</span><span class="p">,</span> <span class="n">k</span><span class="p">)),</span> <span class="n">at</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">n</span><span class="p">:</span>
             <span class="n">_place_rows</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">Field</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">out</span><span class="p">,</span> <span class="n">unit</span><span class="p">)</span>
@@ -13289,13 +13305,7 @@ order-1 <code>H1</code> into order-1 <code>L2</code>, which copies them and take
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/project.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">326</span>
-<span class="normal">327</span>
-<span class="normal">328</span>
-<span class="normal">329</span>
-<span class="normal">330</span>
-<span class="normal">331</span>
-<span class="normal">332</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">332</span>
 <span class="normal">333</span>
 <span class="normal">334</span>
 <span class="normal">335</span>
@@ -13395,7 +13405,13 @@ order-1 <code>H1</code> into order-1 <code>L2</code>, which copies them and take
 <span class="normal">429</span>
 <span class="normal">430</span>
 <span class="normal">431</span>
-<span class="normal">432</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">432</span>
+<span class="normal">433</span>
+<span class="normal">434</span>
+<span class="normal">435</span>
+<span class="normal">436</span>
+<span class="normal">437</span>
+<span class="normal">438</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">project</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">,</span> <span class="n">space</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">average</span><span class="o">=</span><span class="s2">&quot;integral&quot;</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``field`` (a ``Field`` or a name) in ``space``, a space of the same topology:</span>
 <span class="sd">    a new field. Values on points or cells count as order-1 ``H1`` and</span>
@@ -13554,7 +13570,8 @@ point. Cell data (<code>Constant</code>) is its own value.</p>
 <span class="normal">43</span>
 <span class="normal">44</span>
 <span class="normal">45</span>
-<span class="normal">46</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">46</span>
+<span class="normal">47</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">values_at_centers</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;``field`` evaluated at each cell&#39;s parametric center, through its basis.</span>
 
@@ -13570,7 +13587,8 @@ point. Cell data (<code>Constant</code>) is its own value.</p>
     <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="n">H1</span><span class="p">)</span> <span class="ow">and</span> <span class="n">field</span><span class="o">.</span><span class="n">space</span><span class="o">.</span><span class="n">order</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">tack.dataset.algorithms.project</span><span class="w"> </span><span class="kn">import</span> <span class="n">_distinct_point_means</span>
 
-        <span class="n">for_each</span><span class="p">(</span><span class="n">_distinct_point_means</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">materialize</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="n">out</span><span class="p">)</span>
+        <span class="n">for_each</span><span class="p">(</span><span class="n">_distinct_point_means</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">materialize</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="n">out</span><span class="p">,</span>
+                 <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;nan&quot;</span><span class="p">))</span>
     <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">space</span><span class="p">,</span> <span class="n">Constant</span><span class="p">):</span>
         <span class="n">tack</span><span class="o">.</span><span class="n">copyto</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="n">materialize</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">values</span><span class="p">))</span>
     <span class="k">else</span><span class="p">:</span>

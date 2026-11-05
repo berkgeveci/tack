@@ -5913,8 +5913,9 @@ Tests use an exact rational oracle to accept either the separate or fused
 result for a contraction-sensitive expression, and separately require
 parenthesized sums with cancellation to retain their order.</p>
 <p><strong>Compiler configuration:</strong> CUDA explicitly selects <code>--ftz=false</code>,
-<code>--prec-div=true</code>, <code>--prec-sqrt=true</code>, and <code>--fmad=true</code>, without
-<code>--use_fast_math</code>. Metal sets <code>fastMathEnabled</code> false. Both apply to
+<code>--prec-div=true</code>, <code>--prec-sqrt=true</code>, and <code>--fmad=false</code>, without
+<code>--use_fast_math</code>, and writes permitted contractions as explicit fused
+multiply-adds. Metal sets <code>fastMathEnabled</code> false. Both apply to
 ordinary kernels and runtime reduction sources. CPU emits no LLVM
 fast-math flags; HIP and OpenCL receive no unsafe/relaxed-math options, and
 OpenCL asks for correctly rounded f32 division and square root

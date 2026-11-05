@@ -5610,8 +5610,8 @@ target also names:</p>
 <td>IEEE-rounded square root</td>
 </tr>
 <tr>
-<td><code>--fmad=true</code></td>
-<td>allow multiply-add contraction, which the contract permits; the generator emits a product outside a sum as <code>__fmul_rn</code>/<code>__dmul_rn</code>, since NVRTC also fuses across statements</td>
+<td><code>--fmad=false</code></td>
+<td>NVRTC fuses nothing; the generator writes the contractions the contract permits as <code>__fmaf_rn</code>/<code>__fma_rn</code> (a sum or difference with a product operand) and every other product as <code>__fmul_rn</code>/<code>__dmul_rn</code>, so an expression rounds the same in every kernel</td>
 </tr>
 <tr>
 <td><code>--extra-device-vectorization</code></td>

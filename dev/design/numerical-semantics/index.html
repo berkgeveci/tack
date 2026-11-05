@@ -5986,7 +5986,7 @@ options:</p>
 <tr>
 <td>CUDA</td>
 <td><code>runtime/cuda_backend.py</code>, <code>_compile_ptx</code></td>
-<td><code>--ftz=false --prec-div=true --prec-sqrt=true --fmad=true</code>, no <code>--use_fast_math</code></td>
+<td><code>--ftz=false --prec-div=true --prec-sqrt=true --fmad=false</code>, no <code>--use_fast_math</code>; contractions written as <code>__fmaf_rn</code>/<code>__fma_rn</code></td>
 </tr>
 <tr>
 <td>Metal</td>
@@ -6014,8 +6014,8 @@ they change which branch runs. A single safe policy also means no math mode
 has to participate in the variant key. The cost is throughput on
 arithmetic-heavy kernels, and an opt-in fast mode is an open question; any
 such mode would have to join the specialization key.</p>
-<p><strong>Contraction is permitted, reassociation is not.</strong> <code>--fmad=true</code> lets CUDA
-fuse <code>a * b + c</code> into one rounding; other compilers may do the same. Fusing
+<p><strong>Contraction is permitted, reassociation is not.</strong> CUDA fuses <code>a * b + c</code>
+into one rounding; other compilers may do the same. Fusing
 is usually faster and at least as accurate per operation, and forbidding it
 would cost throughput on every GPU, so the contract permits it without
 requiring it. CPU and GPU can therefore differ in the last bits of such
@@ -6039,13 +6039,16 @@ one later use: <code>p = a * b; out = p + c</code> became one fma, <code>p</code
 <code>p - p</code> cannot show that, since the compiler folds it whether or not it
 fuses, so it went unseen until the locator's two searches, inlining the
 same functions into different kernels, disagreed at shared vertices on
-CUDA. (Fusion inside one expression, which the contract permits, can
-still differ between two such kernels; what fixed the locator was a margin
-on its "holds the point" test, since which cell held a shared vertex was
-rounding noise on every backend.) NVRTC has no per-expression option, so the CUDA generator rounds such
-products itself: a floating product that is not an operand of a <code>+</code> or <code>-</code>
-is <code>__fmul_rn</code>/<code>__dmul_rn</code>, which NVRTC never fuses, and the products of a
-sum stay plain, fusable as the contract permits. A test reads a named
+CUDA. (What fixed the locator was a margin on its "holds the point" test,
+since which cell held a shared vertex was rounding noise on every backend.)
+NVRTC has no per-expression option, and fusion inside one expression, left to
+it, still differed between two kernels inlining the same function, with the
+code around it: streamlines with and without the locator's previous-cell try
+disagreed in the last bit on curved wedges. So the CUDA generator chooses
+the contractions itself and NVRTC compiles with <code>--fmad=false</code>: a <code>+</code> or <code>-</code>
+with a product operand is <code>__fmaf_rn</code>/<code>__fma_rn</code> (the left product when both
+are), and every other floating product is <code>__fmul_rn</code>/<code>__dmul_rn</code>. One
+expression then rounds the same wherever it is inlined. A test reads a named
 product once in a later sum against its negated rounding, where a fused
 result is the product's rounding error instead of zero. Metal passes it
 with plain products; OpenCL C contracts per expression by its <code>FP_CONTRACT</code>
