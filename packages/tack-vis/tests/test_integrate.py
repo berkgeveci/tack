@@ -268,3 +268,42 @@ def test_only_the_meshs_own_dimension_counts():
     data.fields["one"] = td.Field(td.H1(data), tack.array(np.ones(8)))
     out = td.integrate(data, "one")
     assert out.measure == pytest.approx(1 / 6) and out.values["one"] == pytest.approx(1 / 6)
+
+
+def _slab():
+    data = td.uniform_grid((5, 4, 3), spacing=(0.25, 0.5, 1.0))
+    x = td.cell_centers(data).values.numpy()[:, 0].astype(np.float32)
+    data.fields["x"] = td.Field(td.Constant(data), tack.array(x))
+    return data, x
+
+
+def test_integrate_takes_fields_by_name(backend):
+    data, x = _slab()
+    doubled = td.Field(td.Constant(data), tack.array(2 * x))
+    out = td.integrate(data, {"twice": doubled, "x": "x"})
+    by_name = td.integrate(data, "x").values["x"]
+    np.testing.assert_allclose(out.values["twice"], 2 * by_name, rtol=1e-6)
+    np.testing.assert_allclose(out.values["x"], by_name, rtol=1e-6)
+    with pytest.raises(TypeError, match="pass"):
+        td.integrate(data, [doubled])
+    with pytest.raises(KeyError):
+        td.integrate(data, {"y": "nosuch"})
+
+
+def test_integrate_carries_fields_past_hidden_cells(backend):
+    data, x = _slab()
+    data.ghosts = td.Ghosts(cells=np.where(x < 0.5, td.Ghosts.HIDDENCELL, 0).astype(np.uint8),
+                            points=None)
+    given = td.Field(td.Constant(data), tack.array(x))
+    out = td.integrate(data, {"given": given, "x": "x"})
+    assert out.values["given"] == pytest.approx(out.values["x"], rel=1e-6)
+    assert out.measure == pytest.approx(1.5)
+
+
+def test_integrate_over_pieces_takes_names(backend):
+    data, x = _slab()
+    pieces = td.PartitionedDataSet([data])
+    assert td.integrate(pieces, {"y": "x"}).values["y"] == pytest.approx(
+        td.integrate(data, "x").values["x"])
+    with pytest.raises(TypeError, match="partition"):
+        td.integrate(pieces, {"g": td.Field(td.Constant(data), tack.array(x))})
