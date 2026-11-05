@@ -78,8 +78,53 @@ def main():
     if rank == 0:
         assert merged.number_of_points == points, (merged.number_of_points, points)
     hierarchy(comm, options)
+    temporal(comm, options)
     if rank == 0:
         print(f"ok: {size} ranks, world from {mode}", flush=True)
+
+
+def flow(t):
+    """A step at ``t`` as VTK's: an image with a velocity ``v`` along x, turning."""
+    import tack.dataset as td
+    from tack.interop.vtk import dataset_to_vtk
+
+    grid = td.uniform_grid((13, 7, 3))
+    grid.time = t
+    v = np.zeros((grid.num_points, 3), np.float32)
+    v[:, 0], v[:, 1] = 1.0, 0.2 * t
+    grid.fields["v"] = td.Field(td.H1(grid), tack.array(v, tack.vec3()))
+    return dataset_to_vtk(grid)
+
+
+def temporal(comm, options):
+    """Pathlines in situ over slabs of each step, the seeds on rank 0: particles cross
+    from rank to rank, and the paths are the whole's."""
+    from tack.communication import World
+
+    rank, size = comm.Get_rank(), comm.Get_size()
+    seeds = np.array([[0.5, 2.0, 1.0], [1.5, 4.0, 1.0]])
+    cuts = np.linspace(0, 12, size + 1).round().astype(int)
+    spread = ta.Pathlines(field="v", seeds=seeds if rank == 0 else np.zeros((0, 3)),
+                          **options)
+    whole = ta.Pathlines(field="v", seeds=seeds, world=World())
+    for t in (0.0, 1.0, 2.0, 3.0):
+        step = flow(t)
+        slab = dm.vtkPartitionedDataSet()
+        slab.append(vtkExtractVOI(voi=(int(cuts[rank]), int(cuts[rank + 1]), 0, 6, 0, 2))(step))
+        slab.GetInformation().Set(dm.vtkDataObject.DATA_TIME_STEP(), t)
+        spread.SetInputDataObject(0, slab)
+        spread.Update()
+        assert spread.error is None, spread.error
+        whole.SetInputDataObject(0, step)
+        whole.Update()
+    mine = spread.GetOutputDataObject(0)
+    points = [np.asarray(block.points.data) for block in mine if block.number_of_points]
+    every = comm.gather(np.concatenate(points) if points else np.zeros((0, 3)))
+    if rank == 0:
+        got = np.concatenate(every)
+        expected = np.asarray(whole.GetOutputDataObject(0).points.data)
+        assert got.shape == expected.shape, (got.shape, expected.shape)
+        np.testing.assert_allclose(got, expected, rtol=1e-6, atol=1e-6)
 
 
 def pulse():

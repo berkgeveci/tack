@@ -62,6 +62,11 @@ wrapper's field parameters numbered in order. Where an implicit function goes
 function, so the same zero set and values; a ``vtkPlane`` is normalized, its
 values those of the unit normal.
 
+The temporal filters (``RunningStatistics``, ``TimeDerivative``, ``Advection``,
+``Pathlines``, ``Streaklines``) run in situ, taking the step their input holds at
+each execution and giving the output at it, or drive the pipeline through their
+input's time steps, one per pass and none twice: ``_Temporal``.
+
 An exception in a filter is VTK's error: printed, the output left empty and
 ``Update()`` false. It is also kept as the algorithm's ``error`` (``None`` after a
 run that succeeded), for Python callers.
@@ -71,6 +76,7 @@ import tack
 
 __all__ = [
     "Advect",
+    "Advection",
     "AsPolygons",
     "AsPolyhedra",
     "AverageDown",
@@ -119,11 +125,13 @@ __all__ = [
     "MergePieces",
     "MergePoints",
     "Outliers",
+    "Pathlines",
     "PointIds",
     "PointNormals",
     "Probe",
     "Project",
     "RemoveGhosts",
+    "RunningStatistics",
     "Shrink",
     "Slice",
     "SlicePlane",
@@ -132,6 +140,7 @@ __all__ = [
     "Spherical",
     "Split",
     "Statistics",
+    "Streaklines",
     "Streamlines",
     "Subdivide",
     "SurfaceNormals",
@@ -139,6 +148,7 @@ __all__ = [
     "Tetrahedralize",
     "Threshold",
     "ThresholdPoints",
+    "TimeDerivative",
     "Transform",
     "Triangulate",
     "Tubes",
@@ -416,6 +426,11 @@ class Parameter:
 
     def __set__(self, algorithm, value):
         algorithm.__dict__[self.slot] = value
+        # Counted apart from the modification time, which the pipeline also moves (a
+        # new input given with SetInputDataObject): a temporal filter starts over
+        # when a parameter changes.
+        algorithm.__dict__["_parameter_changes"] = algorithm.__dict__.get(
+            "_parameter_changes", 0) + 1
         algorithm.Modified()
 
 
@@ -2321,6 +2336,496 @@ class Integrate(_Reduction):
         _label(total, integrals.measure_unit)
         grid.GetCellData().AddArray(total)
         return grid
+
+
+
+# ── Temporal filters ────────────────────────────────────────────────
+
+class _Temporal(TackAlgorithm):
+    """A temporal filter of ``tack.dataset.temporal`` -- an object fed one step at a
+    time -- in a VTK pipeline, in one of two modes (``mode``):
+
+    - **In situ** the filter cannot drive the pipeline: each execution takes the step
+      its input holds and gives the output at that step, stamped with its time. An
+      execution at the time of the last step gives that output again, without
+      taking the step twice; a step back in time, a parameter changed or VTK's
+      ``NO_PRIOR_TEMPORAL_ACCESS`` saying reset start over.
+    - **Driving** the filter asks its input for the steps it needs, one per pass
+      (``CONTINUE_EXECUTING``), never one it has taken since it last started over.
+      A filter that accumulates (``ACCUMULATES``: statistics, particles, paths)
+      takes every step (or those in ``time_range``) and gives one output after the
+      last, with no time: time is in its data, and it reports no time steps
+      downstream. One whose answer is at a time (streaklines, a derivative) gives
+      it at the time requested of it, going on from the steps it has taken; a
+      request before them starts over.
+
+    By default a filter drives where its input has time steps and VTK does not say
+    the pipeline cannot go back in time (``NO_PRIOR_TEMPORAL_ACCESS``, which an in
+    situ adaptor sets). Driving to a step gives the output the same steps give in
+    situ. A tree or an AMR hierarchy is refused; a partitioned dataset's pieces each
+    keep their state, as Tack's filters do. Subclasses give ``_make()``, the Tack
+    filter, and ``_output(result, input, data, final)``, the VTK output for its
+    result."""
+
+    INPUTS = 1
+    BY_BOX = False
+    #: Whether the filter accumulates over the steps (one output, after the last,
+    #: when driving), rather than answering at a time.
+    ACCUMULATES = True
+    #: Whether an answer at step k needs the steps before it (streaklines), or only
+    #: step k - 1 (a derivative).
+    NEEDS_EVERY_STEP = True
+
+    mode = Parameter(None, "'in situ' or 'driving'; by default driving where the input "
+                           "has time steps and the pipeline can go back in time")
+
+    def __init__(self, **parameters):
+        super().__init__(**parameters)
+        self._driving = False
+        self._steps = []
+        self._queue = []
+        self._looping = False
+        self._start_over()
+
+    def _start_over(self):
+        self._filter = None           # the Tack filter, made at the first step
+        self._fed = None              # driving: the index of the last step taken
+        self._time = None             # in situ: the time of the last step taken
+        self._made_at = None          # the parameter changes it was made at
+        self._kept = None             # (output, index or time) of the last output
+        self._results = []            # driving, accumulating: what each step gave
+        self._stale = False
+
+    def _changes(self):
+        return self.__dict__.get("_parameter_changes", 0)
+
+    def _drives(self, info):
+        """Whether this run drives the pipeline (``mode``, else as the input says)."""
+        s = _pipeline()
+        mode = (self.mode or "").replace("_", " ")
+        if mode in ("in situ", "driving"):
+            return mode == "driving"
+        if info.Has(s.NO_PRIOR_TEMPORAL_ACCESS()):
+            return False
+        return info.Has(s.TIME_STEPS()) and info.Length(s.TIME_STEPS()) > 0
+
+    # ── The pipeline ────────────────────────────────────────────────
+
+    def RequestInformation(self, request, inInfo, outInfo):
+        s = _pipeline()
+        info = inInfo[0].GetInformationObject(0)
+        self._driving = self._drives(info)
+        self._steps = list(info.Get(s.TIME_STEPS())) if info.Has(s.TIME_STEPS()) else []
+        # The pipeline before this filter, or the filter, changed: what was taken
+        # of the steps is stale (in situ, every new step is such a change, and
+        # the steps' times say what is new instead).
+        self._stale = True
+        if self._driving and self.ACCUMULATES:
+            out = outInfo.GetInformationObject(0)
+            out.Remove(s.TIME_STEPS())
+            out.Remove(s.TIME_RANGE())
+        return 1
+
+    def RequestUpdateExtent(self, request, inInfo, outInfo):
+        if not self._driving:
+            return 1                  # the step the input holds
+        s = _pipeline()
+        if not self._looping:
+            self._plan(outInfo.GetInformationObject(0))
+        info = inInfo[0].GetInformationObject(0)
+        if self._queue:
+            info.Set(s.UPDATE_TIME_STEP(), self._steps[self._queue[0]])
+        elif self._fed is not None:
+            # Nothing to take: the input keeps the step it gave last, unexecuted.
+            info.Set(s.UPDATE_TIME_STEP(), self._steps[self._fed])
+        return 1
+
+    def _plan(self, out):
+        """The steps this run takes, in order (``_queue``): none where the output kept
+        is the answer."""
+        s = _pipeline()
+        stale = self._stale or self._made_at != self._changes()
+        self._stale = False
+        if self.ACCUMULATES:
+            window = self.time_range
+            steps = [i for i, t in enumerate(self._steps)
+                     if window is None or window[0] <= t <= window[1]]
+            if not steps:
+                raise ValueError(f"{type(self).__name__}: no time step in {window}")
+            if stale or self._kept is None:
+                self._start_over()
+                self._queue = steps
+            else:
+                self._queue = []
+            return
+        wanted = out.Get(s.UPDATE_TIME_STEP()) if out.Has(s.UPDATE_TIME_STEP()) else None
+        k = 0 if wanted is None else max(
+            [i for i, t in enumerate(self._steps) if t <= wanted] or [0])
+        fed = None if stale else self._fed
+        if fed is not None and self._kept is not None and self._kept[1] == k:
+            self._queue = []                            # the answer is kept
+        elif fed is not None and (fed < k if self.NEEDS_EVERY_STEP else fed == k - 1):
+            self._queue = list(range(fed + 1, k + 1))   # on from the steps taken
+        else:
+            self._start_over()
+            first = 0 if self.NEEDS_EVERY_STEP else max(k - 1, 0)
+            self._queue = list(range(first, k + 1))
+
+    def RequestData(self, request, inInfo, outInfo):
+        s = _pipeline()
+        self._run_world = self._world()
+        self._check_inputs(inInfo)
+        input = self.GetInputData(inInfo, 0, 0)
+        if isinstance(input, _TREES):
+            raise TypeError(f"{type(self).__name__} takes a dataset or a partitioned "
+                            f"dataset, not a {input.GetClassName()}")
+        output = self.GetOutputData(outInfo, 0)
+        try:
+            if self._driving:
+                self._drive(request, input, output)
+            else:
+                self._in_situ(inInfo[0].GetInformationObject(0), input, output)
+        except BaseException:
+            request.Remove(s.CONTINUE_EXECUTING())
+            self._looping = False
+            self._start_over()
+            raise
+        return 1
+
+    def _drive(self, request, input, output):
+        s = _pipeline()
+        if not self._queue:
+            self._set(output, *self._kept)
+            return
+        k = self._queue.pop(0)
+        data = self._dataset(input, self.device)
+        if self._filter is None:
+            self._filter = self._make(data)
+            self._made_at = self._changes()
+        result = self._filter.update(data)
+        self._fed = k
+        if self.ACCUMULATES:
+            self._results.append((k, result))
+        if self._queue:
+            request.Set(s.CONTINUE_EXECUTING(), 1)
+            self._looping = True
+            return
+        request.Remove(s.CONTINUE_EXECUTING())
+        self._looping = False
+        if self.ACCUMULATES:
+            self._kept = (self._output(self._results, input, data, final=True), None)
+            self._results = []
+        else:
+            self._kept = (self._output(result, input, data, final=False), k)
+        self._set(output, *self._kept)
+
+    def _in_situ(self, info, input, output):
+        from tack.interop.vtk import _time_of
+
+        s = _pipeline()
+        data = self._dataset(input, self.device)
+        t = _time_of(data)
+        if t is None:
+            raise ValueError(f"{type(self).__name__} needs each step's time "
+                             "(DATA_TIME_STEP)")
+        reset = (self._filter is None or self._made_at != self._changes()
+                 or (self._time is not None and t < self._time)
+                 or (info.Has(s.NO_PRIOR_TEMPORAL_ACCESS())
+                     and info.Get(s.NO_PRIOR_TEMPORAL_ACCESS())
+                     == s.NO_PRIOR_TEMPORAL_ACCESS_RESET))
+        if not reset and t == self._time:
+            self._set(output, *self._kept)              # no new step
+            return
+        if reset:
+            self._start_over()
+            self._filter = self._make(data)
+            self._made_at = self._changes()
+        result = self._filter.update(data)
+        self._time = t
+        self._kept = (self._output(result, input, data, final=False), t)
+        self._set(output, *self._kept)
+
+    def _set(self, output, result, at):
+        """Make ``output`` the VTK ``result``: at its step's time, or at none."""
+        _set_output(self, output, result)
+        info = output.GetInformation()
+        if at is None:
+            info.Remove(vtkDataObject.DATA_TIME_STEP())
+        else:
+            info.Set(vtkDataObject.DATA_TIME_STEP(),
+                     self._steps[at] if self._driving else at)
+
+    # ── What a subclass gives ───────────────────────────────────────
+
+    def _make(self, data):
+        raise NotImplementedError
+
+    def _output(self, result, input, data, final):
+        """The VTK output: for ``result``, the Tack filter's for the step ``data`` (the
+        VTK ``input``); or when driving a filter that accumulates (``final``), for
+        ``result``, every step's ``(index, result)``."""
+        raise NotImplementedError
+
+    def _fields(self, data):
+        """``fields`` as Tack's keys; by default every field of the step."""
+        from tack.dataset import PartitionedDataSet
+
+        first = next(iter(data)) if isinstance(data, PartitionedDataSet) else data
+        if self.fields is None:
+            return list(first.fields)
+        chosen = [self.fields] if isinstance(self.fields, (str, tuple)) else self.fields
+        return [_field_argument(value) for value in chosen]
+
+
+def _pipeline():
+    from vtkmodules.vtkCommonExecutionModel import vtkStreamingDemandDrivenPipeline
+
+    return vtkStreamingDemandDrivenPipeline
+
+
+def _arrays_onto(vtk_data, pieces, names, keep):
+    """A shallow copy of the VTK dataset or partitioned dataset ``vtk_data`` with the
+    fields ``names`` of the matching Tack ``pieces`` (a dataset, or a partitioned one)
+    as arrays; its own arrays kept if ``keep``, else only its ghost marks."""
+    from tack.interop.vtk import _label, _set_values, _to_vtk_values
+
+    def onto(block, piece):
+        out = block.NewInstance()
+        out.ShallowCopy(block)
+        if not keep:
+            for attributes in (out.GetPointData(), out.GetCellData()):
+                ghosts = attributes.GetArray("vtkGhostType")
+                attributes.Initialize()
+                if ghosts is not None:
+                    attributes.AddArray(ghosts)
+        for name in names:
+            field = piece.fields[name]
+            attributes = out.point_data if _on_points(field.space) else out.cell_data
+            _set_values(attributes, name, _to_vtk_values(field.values, share=True,
+                                                         name=name))
+            _label(attributes[name], field.unit)
+        return out
+
+    if isinstance(vtk_data, vtkPartitionedDataSet):
+        out = vtk_data.NewInstance()
+        for block, piece in zip(vtk_data, pieces):
+            out.append(onto(block, piece))
+        return out
+    return onto(vtk_data, pieces)
+
+
+def _count(vtk_data, name, value):
+    """``vtk_data`` (a dataset, or each partition) with the field data array ``name``,
+    one integer."""
+    from vtkmodules.vtkCommonCore import vtkTypeInt64Array
+
+    blocks = list(vtk_data) if isinstance(vtk_data, vtkPartitionedDataSet) else [vtk_data]
+    for block in blocks:
+        array = vtkTypeInt64Array()
+        array.SetName(name)
+        array.InsertNextValue(int(value))
+        block.GetFieldData().AddArray(array)
+    return vtk_data
+
+
+class RunningStatistics(_Temporal):
+    """``td.RunningStatistics``: per point or cell, ``<name>_mean``, ``<name>_variance``
+    (the population variance), ``<name>_min`` and ``<name>_max`` of ``fields`` (every
+    field by default) over the steps, on the input's structure, with field data
+    ``count``, the steps taken. In situ, the statistics up to the step, at its time;
+    driving, over every step (or those in ``time_range``), at no time. The steps must
+    be on one mesh. VTK's ``vtkTemporalStatistics``."""
+
+    OUTPUT = None
+
+    fields = Parameter(None, "the fields: names, or (name, 'points' / 'cells'); by "
+                             "default every field")
+    time_range = Parameter(None, "driving: (first, last), the times of the steps to "
+                                 "take; by default every step")
+
+    def _make(self, data):
+        import tack.dataset as td
+
+        self._names = self._fields(data)
+        return td.RunningStatistics(self._names)
+
+    def _output(self, result, input, data, final):
+        from tack.dataset.dataset import field_name
+
+        if final:
+            count, result = len(result), result[-1][1]
+        else:
+            count = self._filter.count
+        names = [f"{field_name(name)}_{suffix}" for name in self._names
+                 for suffix in ("mean", "variance", "min", "max")]
+        return _count(_arrays_onto(input, result, names, keep=False), "count", count)
+
+
+class TimeDerivative(_Temporal):
+    """``td.TimeDerivative``: the step with ``<name>_dt`` beside its arrays, each of
+    ``fields``' (every field by default) rate of change since the step before, a
+    backward difference. The first step has no step before: it goes out without
+    them. Driving, at the time requested, from that step and the one before it
+    (only the requested one where the one before is kept). VTK has none."""
+
+    OUTPUT = None
+    ACCUMULATES = False
+    NEEDS_EVERY_STEP = False
+
+    fields = Parameter(None, "the fields: names, or (name, 'points' / 'cells'); by "
+                             "default every field")
+    copy = Parameter(True, "keep a copy of the step before (False: references, where "
+                           "the step's arrays are not overwritten by the next)")
+
+    def _make(self, data):
+        import tack.dataset as td
+
+        self._names = self._fields(data)
+        return td.TimeDerivative(self._names, copy=self.copy)
+
+    def _output(self, result, input, data, final):
+        from tack.dataset.dataset import field_name
+
+        if result is None:                              # the first step
+            return _arrays_onto(input, data, [], keep=True)
+        return _arrays_onto(input, result, [f"{field_name(name)}_dt" for name in self._names],
+                            keep=True)
+
+
+class _Particles(_Temporal):
+    """A temporal filter of particles from seeds: ``seeds`` (an ``(n, 3)`` array of
+    world positions) or the points of the data on port 1, read when it starts."""
+
+    INPUTS = 2
+    REQUIRED_INPUTS = 1
+    OUTPUT = "vtkUnstructuredGrid"
+
+    field = Parameter(None, "the velocity field (required): a name, or (name, 'points' "
+                            "/ 'cells')")
+    seeds = Parameter(None, "the seeds, an (n, 3) array of world positions; by default "
+                            "the points of the data on port 1")
+    integrator = Parameter("rk4", "rk4 or euler")
+    step_size = Parameter(None, "the longest substep, in the steps' time unit; by default "
+                                "one substep from step to step")
+    copy = Parameter(True, "keep a copy of the step before (False: references)")
+
+    def SetSourceConnection(self, port):
+        self.SetInputConnection(1, port)
+
+    def SetSourceData(self, data):
+        self.SetInputDataObject(1, data)
+
+    def RequestData(self, request, inInfo, outInfo):
+        self._source = (self.GetInputData(inInfo, 1, 0)
+                        if inInfo[1].GetNumberOfInformationObjects() else None)
+        return super().RequestData(request, inInfo, outInfo)
+
+    def _arguments(self):
+        field = self.field if self.field is not None else self._input_array(0)
+        if field is None:
+            raise ValueError(f"{type(self).__name__} needs 'field', the velocity")
+        seeds = self.seeds
+        if seeds is None and self._source is not None:
+            seeds = _points_of(self._source)
+        if seeds is None:
+            raise ValueError(f"{type(self).__name__} needs seeds: 'seeds', or data on "
+                             "port 1")
+        return {"field": _field_argument(field), "seeds": seeds,
+                "integrator": self.integrator, "step_size": self.step_size,
+                "copy": self.copy}
+
+    def _output(self, result, input, data, final):
+        from tack.interop.vtk import dataset_to_vtk
+
+        out = dataset_to_vtk(result, copy=False)
+        # Of pieces, this rank's paths or lines are one dataset: its one partition.
+        return _as_partitioned(out) if isinstance(input, vtkPartitionedDataSet) else out
+
+
+class Advection(_Particles):
+    """``td.Advection``: particles from ``seeds`` carried by the velocity ``field``
+    through the steps, the velocity linear in time between two steps. In situ, the
+    particles at the step's time: a point cloud with ``seed``, ``source``, ``release``,
+    ``time`` and ``status``. Driving, the particles at every step taken (or those in
+    ``time_range``) in one point cloud, with ``step`` (its index among the input's
+    time steps) beside those, at no time. Over MPI ranks each rank releases the seeds
+    it is given."""
+
+    time_range = Parameter(None, "driving: (first, last), the times of the steps to "
+                                 "take; by default every step")
+
+    def _make(self, data):
+        import tack.dataset as td
+
+        return td.Advection(**self._arguments())
+
+    def _output(self, result, input, data, final):
+        if not final:
+            return super()._output(result, input, data, final)
+        return super()._output(_every_step(result), input, data, final)
+
+
+def _every_step(results):
+    """One point cloud of every step's particles (``(index, cloud)``, each a cloud or a
+    partitioned dataset of this rank's), with ``step``, at no time."""
+    import numpy as np
+
+    import tack.dataset as td
+
+    clouds = []
+    for k, cloud in results:
+        for piece in (cloud if isinstance(cloud, td.PartitionedDataSet) else [cloud]):
+            clouds.append((k, piece))
+    first = clouds[0][1]
+    names = ("seed", "source", "release", "time", "status")
+    fields = {name: np.concatenate([np.asarray(c.fields[name].values.numpy())
+                                    for _, c in clouds]) for name in names}
+    fields["step"] = np.concatenate([np.full(c.num_points, k, np.int64) for k, c in clouds])
+    unit = first.fields["time"].unit
+    out = td.point_cloud(np.concatenate([c.world_positions() for _, c in clouds]),
+                         fields=fields, origin=first.origin, device=first.device,
+                         unit=first.unit,
+                         units={"release": unit, "time": unit} if unit else None)
+    last = results[-1][1]
+    if isinstance(last, td.PartitionedDataSet):
+        return td.PartitionedDataSet([out], world=last.world)
+    return out
+
+
+class Pathlines(_Particles):
+    """``td.Pathlines``: each particle's path from ``seeds`` through the velocity
+    ``field``: a polyline per particle, ``seed`` and ``time`` on its points. In situ,
+    the paths up to the step, at its time; driving, through every step taken (or
+    those in ``time_range``), at no time. VTK's ``vtkParticlePathFilter``."""
+
+    time_range = Parameter(None, "driving: (first, last), the times of the steps to "
+                                 "take; by default every step")
+
+    def _make(self, data):
+        import tack.dataset as td
+
+        return td.Pathlines(**self._arguments())
+
+    def _output(self, result, input, data, final):
+        return super()._output(result[-1][1] if final else result, input, data, final)
+
+
+class Streaklines(_Particles):
+    """``td.Streaklines``: the streaklines at a time of particles released at ``seeds``
+    through the velocity ``field``, ``releases`` at each seed from step to step: a
+    polyline per seed through its particles still in the mesh, newest first, with
+    ``source``, ``release`` and ``time`` on the points, at the step's time. Driving,
+    at the time requested, going on from the steps taken. VTK's
+    ``vtkStreaklineFilter``."""
+
+    ACCUMULATES = False
+
+    releases = Parameter(1, "the particles released at each seed from step to step")
+
+    def _make(self, data):
+        import tack.dataset as td
+
+        return td.Streaklines(**self._arguments(), releases=self.releases)
 
 
 del tack

@@ -215,6 +215,8 @@ their cell data.
 | | `Split` | a `vtkPartitionedDataSet` |
 | | `RemoveGhosts` | the input's structure |
 | AMR hierarchies | `AverageDown` | `vtkOverlappingAMR` |
+| Over time | `RunningStatistics`, `TimeDerivative` | fields, over the steps |
+| | `Advection`, `Pathlines`, `Streaklines` (seeds on port 1, or `seeds=`) | `vtkUnstructuredGrid` |
 
 A `vtkPartitionedDataSet` input runs the filter on each piece and gives a
 `vtkPartitionedDataSet`. The algorithms whose Tack filter answers for the
@@ -351,6 +353,10 @@ averaged = AverageDown(field="Gaussian-Pulse")(pulse)  # fine values in the coar
 kept = Threshold(field=("Gaussian-Pulse", "cells"), lower=0.0, upper=1.0)(pulse)
 assert kept.GetNumberOfPartitionedDataSets() == 2       # a level each, box by box
 ```
+
+The temporal filters run in situ, one step per execution, or drive the
+pipeline through the input's time steps themselves. See
+[Steps over time](over-time.md#in-a-vtk-pipeline).
 
 ## Write your own VTK algorithm
 
