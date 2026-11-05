@@ -625,8 +625,8 @@ class MetalBackend(GPUBackend):
         if Metal is None:
             raise ImportError(
                 "Metal backend requires pyobjc-framework-Metal. "
-                "Install the [metal] extra: pip install -e 'packages/tack-core[metal]' "
-                "in a clone of the repository, or uv sync --extra metal"
+                "Install the [metal] extra: pip install 'tack-core[metal]' "
+                "(in a clone of the repository: uv sync --extra metal)"
             )
 
         self._device = Metal.MTLCreateSystemDefaultDevice()

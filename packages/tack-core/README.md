@@ -30,17 +30,19 @@ print(out.numpy())
 
 ## Install
 
-Tack is not on PyPI yet. From a clone of
-[the repository](https://github.com/Kitware/tack), pick the extra matching
-your hardware:
+Pick the extras for your hardware. Keep `cpu` beside a GPU's extra: without it
+the CPU, the default device, cannot run kernels.
 
 ```bash
-pip install -e "packages/tack-core[cpu]"          # LLVM JIT via llvmlite
-pip install -e "packages/tack-core[metal]"        # Apple Silicon
-pip install -e "packages/tack-core[cuda]"         # NVIDIA
-pip install -e "packages/tack-core[hip]"          # AMD/ROCm — see the repo for hip-python
-pip install -e "packages/tack-core[level_zero]"   # Intel — needs the system Level Zero runtime
+pip install "tack-core[cpu]"           # LLVM JIT via llvmlite
+pip install "tack-core[cpu,metal]"     # Apple silicon
+pip install "tack-core[cpu,cuda]"      # NVIDIA
+pip install "tack-core[cpu,hip]"       # AMD, with ROCm (hip-python: Linux x86-64)
+pip install "tack-core[cpu]"           # Intel: Level Zero is the system's runtime, no extra
 ```
+
+Python 3.11 or newer. Tack is pure Python and compiles kernels when they are
+first called.
 
 ## Backends
 
@@ -54,7 +56,13 @@ pip install -e "packages/tack-core[level_zero]"   # Intel — needs the system L
 
 ## Related packages
 
-- `tack-vis` — `tack.dataset`: meshes, fields and visualization algorithms; VTK and MFEM interop
+- `tack-vis`: `tack.dataset`, with meshes, fields and visualization algorithms,
+  and the VTK and MFEM interop. It is not on PyPI; install it from the
+  repository, at the tag of the `tack-core` release you have, for example:
+
+  ```bash
+  pip install "tack-vis @ git+https://github.com/Kitware/tack@v0.7.0#subdirectory=packages/tack-vis"
+  ```
 
 Full documentation, examples and the kernel-language reference are in the
 [repository](https://github.com/Kitware/tack).

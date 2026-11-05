@@ -305,8 +305,8 @@ saying what is missing and how to install it:
 ```text
 RuntimeError: Cannot start the 'hip' device: missing dependency.
   No module named 'hip'
-  Requires an AMD GPU with ROCm, plus hip-python; in a clone:
-    pip install -e 'packages/tack-core[hip]'   (or: uv sync --extra hip)
+  Requires an AMD GPU with ROCm, plus hip-python:
+    pip install 'tack-core[hip]'   (in a clone: uv sync --extra hip)
 ```
 
 If the device cannot be made, the previous default stays.

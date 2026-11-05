@@ -179,8 +179,8 @@ faster. [Performance](performance.md) has the measurements.
 Tack does not render, provide a user interface, or read and write file formats
 itself; it leaves those to VTK, ParaView and their readers. It is not a drop-in
 replacement for NumPy, and it has no automatic differentiation. Kernels are
-written in a subset of Python. Tack is not on PyPI yet, so you
-[install it](install.md) from a clone of its repository.
+written in a subset of Python. [Install](install.md) gets `tack-core` from PyPI
+and `tack-vis` from the repository.
 
 ## Where to go next
 
