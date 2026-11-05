@@ -153,8 +153,45 @@ def test_triangulate_keeps_the_area(backend, cell_type, per_cell):
                                                                    rel=1e-5)
 
 
+#: A U, concave: a fan from its first corner covers 9 of its area 6.
+_U = [(0, 0), (4, 0), (4, 2), (3, 2), (3, 1), (1, 1), (1, 2), (0, 2)]
+
+
+def _polygons(loops):
+    """Polygons of the given corner loops, ``(x, y, z)`` each, as one dataset."""
+    points = np.array([p for loop in loops for p in loop], np.float32)
+    offsets = np.cumsum([0] + [len(loop) for loop in loops]).astype(np.int64)
+    topology = td.PolygonalTopology(tack.array(offsets), tack.array(np.arange(
+        len(points), dtype=np.int64)), num_points=len(points))
+    return td.DataSet(topology, points)
+
+
+@pytest.mark.parametrize("loop", [
+    [(x, y, 0.0) for x, y in _U],                     # in xy
+    [(x, y, 0.0) for x, y in _U[::-1]],               # wound the other way
+    [(0.0, x, y) for x, y in _U],                     # in yz
+    [(x, y, 0.25 * x) for x, y in _U],                # in a tilted plane
+    [(0, 0, 0), (1, 0, 0), (2, 0, 0), (2, 2, 0), (0, 2, 0)],    # three corners in line
+])
+def test_triangulate_cuts_concave_polygons_into_ears(backend, loop):
+    """VTK's vtkTriangleFilter's answer: n - 2 triangles covering the polygon once,
+    each wound as it is, where a fan from the first corner covered a concave one
+    twice in part (the U's 9 for its 6)."""
+    data = _polygons([loop, [(5, 0, 0), (6, 0, 0), (6, 1, 0), (5, 1, 0)]])
+    out = td.triangulate(data)
+    assert out.num_cells == (len(loop) - 2) + 2
+    area = td.cell_geometry(out).measure.values.numpy()
+    exact = td.cell_geometry(data).measure.values.numpy()
+    np.testing.assert_allclose([area[:len(loop) - 2].sum(), area[len(loop) - 2:].sum()],
+                               exact, rtol=1e-6)
+    normals = td.surface_normals(out).fields["cell_normals"].values.numpy()
+    polygon_normal = td.surface_normals(data).fields["cell_normals"].values.numpy()[0]
+    wound = normals[:len(loop) - 2][area[:len(loop) - 2] > 1e-9]
+    np.testing.assert_allclose(wound, np.tile(polygon_normal, (len(wound), 1)), atol=1e-6)
+
+
 @needs_vtk
-def test_triangulate_polygons_as_fans(backend):
+def test_triangulate_polygons_as_ears(backend):
     data = td.as_polygons(_plane())
     out = td.triangulate(data)
     loops, _ = data.topology.loops()
