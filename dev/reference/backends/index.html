@@ -5296,14 +5296,14 @@ collectives retain partial-grid support. The flag itself describes the
 execution model and does not certify participation or atomics. See the
 <a href="../language-contract/#workgroups-and-synchronization">workgroup contract</a>.</p>
 <h2 id="installing">Installing<a class="headerlink" href="#installing" title="Permanent link">&para;</a></h2>
-<p>Tack is not on PyPI yet. In a clone of the repository, each backend is an
-extra of <code>tack-core</code> (<code>uv sync --extra cuda</code> does the same as the line below):</p>
-<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s1">&#39;packages/tack-core[cpu]&#39;</span><span class="w">          </span><span class="c1"># llvmlite</span>
-pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s1">&#39;packages/tack-core[metal]&#39;</span><span class="w">        </span><span class="c1"># pyobjc-framework-Metal</span>
-pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s1">&#39;packages/tack-core[cuda]&#39;</span><span class="w">         </span><span class="c1"># cuda-python; needs the NVIDIA driver</span>
-pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s1">&#39;packages/tack-core[hip]&#39;</span><span class="w">          </span><span class="c1"># hip-python; needs ROCm</span>
-pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s1">&#39;packages/tack-core[level_zero]&#39;</span><span class="w">   </span><span class="c1"># installs nothing — see below</span>
-pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s1">&#39;packages/tack-core[warp]&#39;</span><span class="w">         </span><span class="c1"># warp-lang: the prototype Warp backend</span>
+<p>Each backend is an extra of <code>tack-core</code> (in a clone of the repository,
+<code>uv sync --extra cuda</code> does the same as the line below):</p>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;tack-core[cpu]&#39;</span><span class="w">          </span><span class="c1"># llvmlite</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;tack-core[metal]&#39;</span><span class="w">        </span><span class="c1"># pyobjc-framework-Metal</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;tack-core[cuda]&#39;</span><span class="w">         </span><span class="c1"># cuda-python; needs the NVIDIA driver</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;tack-core[hip]&#39;</span><span class="w">          </span><span class="c1"># hip-python; needs ROCm</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;tack-core[level_zero]&#39;</span><span class="w">   </span><span class="c1"># installs nothing — see below</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;tack-core[warp]&#39;</span><span class="w">         </span><span class="c1"># warp-lang: the prototype Warp backend</span>
 </code></pre></div>
 <p>Two of these need a word; the Warp backend is described in
 <a href="../../core/choose-a-device/">Backends</a>.</p>

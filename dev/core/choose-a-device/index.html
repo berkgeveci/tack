@@ -5597,8 +5597,8 @@ interface may change.</p>
 saying what is missing and how to install it:</p>
 <div class="highlight"><pre><span></span><code>RuntimeError: Cannot start the &#39;hip&#39; device: missing dependency.
   No module named &#39;hip&#39;
-  Requires an AMD GPU with ROCm, plus hip-python; in a clone:
-    pip install -e &#39;packages/tack-core[hip]&#39;   (or: uv sync --extra hip)
+  Requires an AMD GPU with ROCm, plus hip-python:
+    pip install &#39;tack-core[hip]&#39;   (in a clone: uv sync --extra hip)
 </code></pre></div>
 <p>If the device cannot be made, the previous default stays.</p>
 <h3 id="keeping-an-embedding-programs-default">Keeping an embedding program's default<a class="headerlink" href="#keeping-an-embedding-programs-default" title="Permanent link">&para;</a></h3>

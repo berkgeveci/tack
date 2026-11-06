@@ -595,10 +595,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#install-into-another-environment" class="md-nav__link">
+  <a href="#work-on-tack-from-a-clone" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Install into another environment
+        Work on Tack from a clone
       
     </span>
   </a>
@@ -4922,10 +4922,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#install-into-another-environment" class="md-nav__link">
+  <a href="#work-on-tack-from-a-clone" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Install into another environment
+        Work on Tack from a clone
       
     </span>
   </a>
@@ -5001,24 +5001,26 @@
 anyone about to use Tack for the first time. After it you have both of Tack's
 packages installed, with the extras for your GPU, and a check that each device
 compiles and runs a kernel.</p>
-<p>Tack is not on PyPI yet, so you install it from a clone of its repository. It
-needs Python 3.11 or newer. There is no build step: Tack is pure Python and
-compiles kernels when they are first called.</p>
-<div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/Kitware/tack.git
-<span class="nb">cd</span><span class="w"> </span>tack
-uv<span class="w"> </span>sync<span class="w"> </span>--extra<span class="w"> </span>cpu
-uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import tack; print(tack.device(&#39;cpu&#39;))&quot;</span><span class="w">    </span><span class="c1"># prints: cpu</span>
+<p>Tack is two packages:
+- <strong><code>tack-core</code></strong> holds the core and communication layers, and is on PyPI.
+- <strong><code>tack-vis</code></strong> holds the data and visualization layers. It is installed from
+  Tack's repository, at the tag of the <code>tack-core</code> release you have.</p>
+<p>Tack needs Python 3.11 or newer. There is no build step: Tack is pure Python
+and compiles kernels when they are first called.</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;tack-core[cpu]&#39;</span>
+python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;tack-vis @ git+https://github.com/Kitware/tack@v0.7.0#subdirectory=packages/tack-vis&#39;</span>
+python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import tack; print(tack.device(&#39;cpu&#39;))&quot;</span><span class="w">          </span><span class="c1"># prints: cpu</span>
 </code></pre></div>
-<p>These commands use <a href="https://docs.astral.sh/uv/getting-started/installation/">uv</a>.
-<code>uv sync</code> installs both packages into the clone's own environment:
-<code>tack-core</code>, which holds the core and communication layers, and <code>tack-vis</code>,
-which holds the data and visualization layers. Run your scripts with
-<code>uv run python</code> from the clone's directory.</p>
+<p>Install <code>tack-core</code> first, with the extras for your devices (below), then
+<code>tack-vis</code>, which depends on it. Use a virtual environment (<code>python -m venv
+.venv</code>, then activate it) rather than the system's Python.</p>
 <h2 id="choose-the-extras-for-your-devices">Choose the extras for your devices<a class="headerlink" href="#choose-the-extras-for-your-devices" title="Permanent link">&para;</a></h2>
-<p>Each backend is an <em>extra</em>, a named set of optional dependencies. Add the
-extra for each kind of device you have. Keep the <code>cpu</code> extra beside a GPU one,
-because the CPU is the default device until you choose another.</p>
-<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>sync<span class="w"> </span>--extra<span class="w"> </span>cpu<span class="w"> </span>--extra<span class="w"> </span>cuda<span class="w">        </span><span class="c1"># the CPU and an NVIDIA GPU</span>
+<p>Each backend is an <em>extra</em> of <code>tack-core</code>, a named set of optional
+dependencies. Add the extra for each kind of device you have. Keep the <code>cpu</code>
+extra beside a GPU one, because the CPU is the default device until you choose
+another. A plain <code>tack-core</code> without the <code>cpu</code> extra cannot run kernels on the
+CPU.</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;tack-core[cpu,cuda]&#39;</span><span class="w">      </span><span class="c1"># the CPU and an NVIDIA GPU</span>
 </code></pre></div>
 <table>
 <thead>
@@ -5071,49 +5073,45 @@ because the CPU is the default device until you choose another.</p>
 <p>The Intel extra installs nothing because Tack reaches Level Zero through system
 libraries, not Python packages. It exists so that the same commands work for
 every device.</p>
-<p>Other extras add what some parts of Tack connect to:</p>
+<p>Some parts of Tack connect to other packages, which you install beside it:</p>
 <table>
 <thead>
 <tr>
-<th>Extra</th>
-<th>What it installs</th>
-<th>What it is for</th>
+<th>For</th>
+<th>Install</th>
+<th>Notes</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>interop</code></td>
-<td>VTK 9.7.1 or newer, and PyMFEM</td>
-<td>reading and drawing data with VTK, and importing MFEM solutions</td>
+<td>reading and drawing data with VTK</td>
+<td><code>python -m pip install 'vtk&gt;=9.7.1'</code></td>
+<td></td>
 </tr>
 <tr>
-<td><code>mpi</code></td>
-<td><code>mpi4py</code> 4.0 or newer</td>
-<td>running over MPI ranks; it builds against your system's MPI, so <code>mpicc</code> must be on your path</td>
+<td>importing MFEM solutions</td>
+<td><code>python -m pip install mfem</code></td>
+<td>PyMFEM has wheels for macOS on Apple silicon and Linux on x86-64 only</td>
 </tr>
 <tr>
-<td><code>dev</code></td>
-<td><code>pytest</code> and the test tools</td>
-<td>running Tack's tests</td>
+<td>running over MPI ranks</td>
+<td><code>python -m pip install 'tack-core[mpi]'</code></td>
+<td>mpi4py 4.0 or newer; it builds against your system's MPI, so <code>mpicc</code> must be on your path</td>
 </tr>
 </tbody>
 </table>
-<p>PyMFEM has wheels for macOS on Apple silicon and for Linux on x86-64 only.
-Elsewhere the <code>interop</code> extra installs VTK alone.</p>
-<h2 id="install-into-another-environment">Install into another environment<a class="headerlink" href="#install-into-another-environment" title="Permanent link">&para;</a></h2>
-<p>To use Tack from an application's own environment, install the packages from
-the clone with pip. Install <code>tack-core</code> first, with the extras for your
-devices, then <code>tack-vis</code>, which depends on it.</p>
-<div class="highlight"><pre><span></span><code>python<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv
-<span class="nb">source</span><span class="w"> </span>.venv/bin/activate<span class="w">          </span><span class="c1"># on Windows: .venv\Scripts\Activate.ps1</span>
-python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s1">&#39;/path/to/tack/packages/tack-core[cpu,cuda]&#39;</span>
-python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>/path/to/tack/packages/tack-vis
-python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;vtk&gt;=9.7.1&#39;</span><span class="w">                 </span><span class="c1"># optional: VTK interop</span>
+<h2 id="work-on-tack-from-a-clone">Work on Tack from a clone<a class="headerlink" href="#work-on-tack-from-a-clone" title="Permanent link">&para;</a></h2>
+<p>To change Tack, or to run its tests and the documentation's examples, install
+both packages from a clone with <a href="https://docs.astral.sh/uv/getting-started/installation/">uv</a>.
+<code>uv sync</code> installs them into the clone's own environment, with the same extras
+as above (<code>--extra cuda</code>), plus <code>interop</code> (VTK and PyMFEM), <code>mpi</code>, and <code>dev</code>
+(<code>pytest</code> and the test tools):</p>
+<div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/Kitware/tack.git
+<span class="nb">cd</span><span class="w"> </span>tack
+uv<span class="w"> </span>sync<span class="w"> </span>--extra<span class="w"> </span>cpu<span class="w"> </span>--extra<span class="w"> </span>cuda<span class="w"> </span>--extra<span class="w"> </span>interop<span class="w"> </span>--extra<span class="w"> </span>dev
+uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import tack; print(tack.device(&#39;cpu&#39;))&quot;</span><span class="w">    </span><span class="c1"># prints: cpu</span>
 </code></pre></div>
-<p>In this form <code>interop</code> is not an extra of either package, so install VTK and
-MFEM (<code>mfem</code>) yourself if you need them. The <code>mpi</code> and <code>warp</code> extras are
-extras of <code>tack-core</code> and <code>tack-vis</code> and work the same way. A plain
-<code>tack-core</code> without the <code>cpu</code> extra cannot run kernels on the CPU.</p>
+<p>Run your scripts with <code>uv run python</code> from the clone's directory.</p>
 <h2 id="check-that-each-device-works">Check that each device works<a class="headerlink" href="#check-that-each-device-works" title="Permanent link">&para;</a></h2>
 <p>This script runs one kernel on every device Tack finds. A device works when
 its line says so.</p>
@@ -5150,8 +5148,8 @@ It raises an error that names what is missing and how to install it:</p>
 <div class="highlight"><pre><span></span><code>&gt;&gt;&gt; tack.device(&quot;cuda&quot;)
 RuntimeError: Cannot start the &#39;cuda&#39; device: missing dependency.
   No module named &#39;cuda&#39;
-  Requires an NVIDIA GPU and the CUDA toolkit; in a clone of the repository:
-    pip install -e &#39;packages/tack-core[cuda]&#39;   (or: uv sync --extra cuda)
+  Requires an NVIDIA GPU and the CUDA toolkit, plus cuda-python:
+    pip install &#39;tack-core[cuda]&#39;   (in a clone: uv sync --extra cuda)
 </code></pre></div>
 <h2 id="details">Details<a class="headerlink" href="#details" title="Permanent link">&para;</a></h2>
 <p><strong>NVIDIA.</strong> Tack is tested with NVRTC 13, the compiler <code>cuda-python</code> uses to
@@ -5172,7 +5170,7 @@ the device when it starts, and refuses <code>f64</code> arrays on a device witho
 <p><strong>Apple.</strong> Apple GPUs have no double precision, so Metal has no <code>f64</code>. Every
 dataset algorithm still runs there, in single precision.</p>
 <p><strong>The documentation's own examples.</strong> The scripts under <code>docs/examples/</code> and
-<code>docs/gallery/</code> run from the clone with <code>uv run python</code>. Some need the
+<code>docs/gallery/</code> run from a clone with <code>uv run python</code>. Some need the
 <code>interop</code> extra for their figures.</p>
 <h2 id="where-to-go-next">Where to go next<a class="headerlink" href="#where-to-go-next" title="Permanent link">&para;</a></h2>
 <ul>

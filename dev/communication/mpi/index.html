@@ -5208,7 +5208,7 @@ cells, and every run passes, bit for bit.</p>
 <p>MPI is optional in Tack. The <code>mpi</code> extra installs mpi4py, which builds against
 the MPI already on your system:</p>
 <div class="highlight"><pre><span></span><code>uv<span class="w"> </span>sync<span class="w"> </span>--extra<span class="w"> </span>mpi<span class="w">                                  </span><span class="c1"># in a clone of Tack, with your other extras</span>
-pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s1">&#39;packages/tack-core[mpi]&#39;</span><span class="w">             </span><span class="c1"># or, in another environment</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;tack-core[mpi]&#39;</span><span class="w">                        </span><span class="c1"># or, with pip</span>
 </code></pre></div>
 <p>The build needs your MPI's compiler wrapper, <code>mpicc</code>, on the path. On a
 cluster, load the MPI module first, so mpi4py links against the MPI the
