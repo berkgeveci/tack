@@ -5,31 +5,34 @@ anyone about to use Tack for the first time. After it you have both of Tack's
 packages installed, with the extras for your GPU, and a check that each device
 compiles and runs a kernel.
 
-Tack is not on PyPI yet, so you install it from a clone of its repository. It
-needs Python 3.11 or newer. There is no build step: Tack is pure Python and
-compiles kernels when they are first called.
+Tack is two packages:
+- **`tack-core`** holds the core and communication layers, and is on PyPI.
+- **`tack-vis`** holds the data and visualization layers. It is installed from
+  Tack's repository, at the tag of the `tack-core` release you have.
+
+Tack needs Python 3.11 or newer. There is no build step: Tack is pure Python
+and compiles kernels when they are first called.
 
 ```bash
-git clone https://github.com/Kitware/tack.git
-cd tack
-uv sync --extra cpu
-uv run python -c "import tack; print(tack.device('cpu'))"    # prints: cpu
+python -m pip install 'tack-core[cpu]'
+python -m pip install 'tack-vis @ git+https://github.com/Kitware/tack@v0.7.0#subdirectory=packages/tack-vis'
+python -c "import tack; print(tack.device('cpu'))"          # prints: cpu
 ```
 
-These commands use [uv](https://docs.astral.sh/uv/getting-started/installation/).
-`uv sync` installs both packages into the clone's own environment:
-`tack-core`, which holds the core and communication layers, and `tack-vis`,
-which holds the data and visualization layers. Run your scripts with
-`uv run python` from the clone's directory.
+Install `tack-core` first, with the extras for your devices (below), then
+`tack-vis`, which depends on it. Use a virtual environment (`python -m venv
+.venv`, then activate it) rather than the system's Python.
 
 ## Choose the extras for your devices
 
-Each backend is an *extra*, a named set of optional dependencies. Add the
-extra for each kind of device you have. Keep the `cpu` extra beside a GPU one,
-because the CPU is the default device until you choose another.
+Each backend is an *extra* of `tack-core`, a named set of optional
+dependencies. Add the extra for each kind of device you have. Keep the `cpu`
+extra beside a GPU one, because the CPU is the default device until you choose
+another. A plain `tack-core` without the `cpu` extra cannot run kernels on the
+CPU.
 
 ```bash
-uv sync --extra cpu --extra cuda        # the CPU and an NVIDIA GPU
+python -m pip install 'tack-core[cpu,cuda]'      # the CPU and an NVIDIA GPU
 ```
 
 | Device | Extra | What it installs | What the system needs |
@@ -45,35 +48,30 @@ The Intel extra installs nothing because Tack reaches Level Zero through system
 libraries, not Python packages. It exists so that the same commands work for
 every device.
 
-Other extras add what some parts of Tack connect to:
+Some parts of Tack connect to other packages, which you install beside it:
 
-| Extra | What it installs | What it is for |
+| For | Install | Notes |
 |---|---|---|
-| `interop` | VTK 9.7.1 or newer, and PyMFEM | reading and drawing data with VTK, and importing MFEM solutions |
-| `mpi` | `mpi4py` 4.0 or newer | running over MPI ranks; it builds against your system's MPI, so `mpicc` must be on your path |
-| `dev` | `pytest` and the test tools | running Tack's tests |
+| reading and drawing data with VTK | `python -m pip install 'vtk>=9.7.1'` | |
+| importing MFEM solutions | `python -m pip install mfem` | PyMFEM has wheels for macOS on Apple silicon and Linux on x86-64 only |
+| running over MPI ranks | `python -m pip install 'tack-core[mpi]'` | mpi4py 4.0 or newer; it builds against your system's MPI, so `mpicc` must be on your path |
 
-PyMFEM has wheels for macOS on Apple silicon and for Linux on x86-64 only.
-Elsewhere the `interop` extra installs VTK alone.
+## Work on Tack from a clone
 
-## Install into another environment
-
-To use Tack from an application's own environment, install the packages from
-the clone with pip. Install `tack-core` first, with the extras for your
-devices, then `tack-vis`, which depends on it.
+To change Tack, or to run its tests and the documentation's examples, install
+both packages from a clone with [uv](https://docs.astral.sh/uv/getting-started/installation/).
+`uv sync` installs them into the clone's own environment, with the same extras
+as above (`--extra cuda`), plus `interop` (VTK and PyMFEM), `mpi`, and `dev`
+(`pytest` and the test tools):
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate          # on Windows: .venv\Scripts\Activate.ps1
-python -m pip install -e '/path/to/tack/packages/tack-core[cpu,cuda]'
-python -m pip install -e /path/to/tack/packages/tack-vis
-python -m pip install 'vtk>=9.7.1'                 # optional: VTK interop
+git clone https://github.com/Kitware/tack.git
+cd tack
+uv sync --extra cpu --extra cuda --extra interop --extra dev
+uv run python -c "import tack; print(tack.device('cpu'))"    # prints: cpu
 ```
 
-In this form `interop` is not an extra of either package, so install VTK and
-MFEM (`mfem`) yourself if you need them. The `mpi` and `warp` extras are
-extras of `tack-core` and `tack-vis` and work the same way. A plain
-`tack-core` without the `cpu` extra cannot run kernels on the CPU.
+Run your scripts with `uv run python` from the clone's directory.
 
 ## Check that each device works
 
@@ -117,8 +115,8 @@ It raises an error that names what is missing and how to install it:
 >>> tack.device("cuda")
 RuntimeError: Cannot start the 'cuda' device: missing dependency.
   No module named 'cuda'
-  Requires an NVIDIA GPU and the CUDA toolkit; in a clone of the repository:
-    pip install -e 'packages/tack-core[cuda]'   (or: uv sync --extra cuda)
+  Requires an NVIDIA GPU and the CUDA toolkit, plus cuda-python:
+    pip install 'tack-core[cuda]'   (in a clone: uv sync --extra cuda)
 ```
 
 ## Details
@@ -145,7 +143,7 @@ the device when it starts, and refuses `f64` arrays on a device without it.
 dataset algorithm still runs there, in single precision.
 
 **The documentation's own examples.** The scripts under `docs/examples/` and
-`docs/gallery/` run from the clone with `uv run python`. Some need the
+`docs/gallery/` run from a clone with `uv run python`. Some need the
 `interop` extra for their figures.
 
 ## Where to go next

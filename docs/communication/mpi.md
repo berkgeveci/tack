@@ -45,7 +45,7 @@ the MPI already on your system:
 
 ```bash
 uv sync --extra mpi                                  # in a clone of Tack, with your other extras
-pip install -e 'packages/tack-core[mpi]'             # or, in another environment
+pip install 'tack-core[mpi]'                        # or, with pip
 ```
 
 The build needs your MPI's compiler wrapper, `mpicc`, on the path. On a

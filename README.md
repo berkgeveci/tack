@@ -30,25 +30,26 @@ result = out.numpy()
 
 ## Installation
 
-Tack is split into two packages: **tack-core** (compute framework) and **tack-vis** (datasets and visualization: `tack.dataset`).
+Tack is split into two packages: **tack-core** (compute framework), on PyPI, and
+**tack-vis** (datasets and visualization: `tack.dataset`), installed from this
+repository.
 
 ```bash
-# Install everything from source with uv
+pip install "tack-core[cpu]"    # core + CPU backend (LLVM JIT); add metal, cuda or hip
+                                # for a GPU: "tack-core[cpu,cuda]"
+pip install "tack-vis @ git+https://github.com/Kitware/tack@v0.7.0#subdirectory=packages/tack-vis"
+```
+
+To work on Tack, install everything from a clone with uv:
+
+```bash
 git clone https://github.com/Kitware/tack.git
 cd tack
 uv sync --extra cpu    # add --extra metal, cuda, hip or level_zero for a GPU,
                        # and --extra interop for VTK and MFEM
-
-# Or with pip, from the same clone (tack-core first: tack-vis needs it)
-pip install -e "packages/tack-core[cpu]"         # core + CPU backend (LLVM JIT)
-pip install -e "packages/tack-core[metal]"       # ...or + Metal (macOS)
-pip install -e "packages/tack-core[cuda]"        # ...or + CUDA
-pip install -e "packages/tack-core[hip]"         # ...or + HIP (see note below)
-pip install -e "packages/tack-core[level_zero]"  # ...or + Level Zero (Intel)
-pip install -e packages/tack-vis                 # datasets and visualization
 ```
 
-Tack is not on PyPI yet; install it from source as above.
+[Install](docs/install.md) has the extras and what each device needs.
 
 ## Backends
 
