@@ -68,6 +68,18 @@ def test_kernel_qualifier():
     assert 'extern "C"' not in src
 
 
+def test_every_kernel_requires_sub_groups_of_16():
+    """IGC 2.7.11 miscompiled kernels it chose to build SIMD32 (vendor workarounds)."""
+
+    @tack.kernel
+    def add(x, y, out):
+        for i in range(x.shape[0]):
+            out[i] = x[i] + y[i]
+
+    src = _source(add, _array(), _array(), _array())
+    assert "__attribute__((intel_reqd_sub_group_size(16)))\n__kernel void" in src
+
+
 def test_array_parameters_are_global_pointers():
     """Arrays live in __global address space; getting this wrong is silent."""
 
