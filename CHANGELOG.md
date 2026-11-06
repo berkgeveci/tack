@@ -3,6 +3,1416 @@
 All notable changes to Tack are recorded here. Rules cited by name live in
 [`docs/reference/language-contract.md`](docs/reference/language-contract.md).
 
+## 0.7.0 — 2026-11-06
+
+The headline: Tack's filters run inside VTK. Nearly every `tack.dataset`
+filter is a VTK algorithm (`tack.interop.vtk.algorithms`), its
+arguments the algorithm's parameters, taking trees of datasets, AMR
+hierarchies and pieces over MPI ranks, and running on the device its
+`device` names. Datasets cross between VTK and Tack without a copy
+(`copy=False`): on the CPU, on Metal, and on CUDA, HIP and Level Zero with a
+VTK that holds device arrays. Examples 47-53 are VTK pipelines with Tack's
+filters in them, on real Exodus, OpenFOAM and AMR files. Higher orders:
+bases of any order on every shape from segments to wedges, Bernstein and
+serendipity spaces, `HDiv` and `HCurl` at order 1, curved geometries, and
+contour, slice, clip, threshold, advection and integration of them, cut at
+the field's roots; VTK's Lagrange, Bezier and quadratic cells, its
+`vtkCellGrid` and more of MFEM, both ways, with galleries in the
+Visualization Guide. Advection gains an adaptive RK45, a path length, a
+terminal speed and a walk through face neighbours; `tack.algorithms` gains
+segmented reductions and scans, the same bits on every backend. The
+documentation site is rewritten around Tack's four layers, the repository
+is now `github.com/Kitware/tack`, and tack-core is on PyPI
+(`pip install 'tack-core[cpu]'`), with tack-vis installed from this
+repository at the release tag.
+
+Nine changes break code written for 0.6; they lead the Changed section. The
+ones most programs meet: `data.fields` is a `Fields` mapping that refuses an
+ambiguous name, `project` into `Constant` averages over each cell rather
+than its corners, `extract_surface` keeps only the points its faces use, the
+VTK algorithms of points, lines and surfaces give `vtkPolyData`, and a
+kernel over cells that reads their faces or edges asks for them with
+`incidence=`.
+
+Validated on Linux (CPU; CUDA on an RTX 6000 Ada; HIP on two MI210s; Level
+Zero on an Intel Max 1100) and macOS (CPU and Metal on an M1 Max), with
+debug mode, both id widths of the dataset tests and MPI, against VTK 9.7.1,
+VTK master and VTK builds holding CUDA, HIP and Level Zero arrays, together
+with tack-examples' ports of production datasets. A targeted round after
+the last fixes reran what they touched on every machine, and the disk cache
+now settles: a second and third run of the quick tests add no entries.
+
+### Added
+
+- Segmented operations in `tack.algorithms`: `segment_reduce` (sum, min, max, mean),
+  `segment_scan` (inclusive and exclusive sums, running min and max),
+  `segment_broadcast` and `segment_ids`, over flat values and CSR offsets,
+  empty segments kept -- each cell's points, each point's cells, sparse rows.
+  A segment of up to 256 elements is one thread's; a longer one goes by
+  chunks of 256, a segment over several chunks combined a level up, so one
+  enormous segment is a few launches, not one thread's walk. On an M1 Max's
+  GPU a 10M-element segment reduces in 4 ms (a thread per segment: 1.2 s), a
+  skewed mix of 1M short segments and one of 5M in 3.7 ms (590 ms), and 2.5M
+  segments of about 4 in 0.66 ms (0.59). No atomics in the arithmetic, so
+  float sums are the same bits on every backend; `ordered=True` sums each
+  segment in element order, as `reduce_by_key` does. Empty segments take
+  `empty=` (0, NaN for a mean, or the type's extremes for min and max), or
+  keep their output with `empty="keep"`; vectors reduce componentwise; debug
+  mode checks the offsets.
+- `advect(..., neighbors=True)` and `streamlines(..., neighbors=True)`: a stage
+  whose particle has left the cell it was last found in tries that cell's face
+  neighbours before the locator's bins, taking one, as the last cell is taken,
+  only where it holds the point well inside, so the paths are the bins' bit
+  for bit. On the CPU, streamlines on the aneurysm (8.7M tetrahedra) took 1.45
+  to 2.04x less time (20,000 seeds: 1116 to 546 ms) and on the ONERA M6 (46.9M
+  cells) 1.63 to 1.90x (16,384 seeds: 2067 to 1086 ms). About one location in
+  seven missed the last cell, and 43-49% (aneurysm) and 78% (M6) of the misses
+  were in a face neighbour. The neighbours are a table of six ids a cell
+  (`CellLocator.cell_neighbors()`), built from the faces on first use and kept
+  with the locator: 0.9 s and 210 MB on the aneurysm, 4.1 s and 1.1 GB on the
+  M6, so the walk is off by default. Pyramids, polyhedra and surfaces search
+  the bins as before.
+- Tack's filters as VTK algorithms, `tack.interop.vtk.algorithms`:
+  `VTKPythonAlgorithmBase` subclasses that sit in a VTK pipeline beside VTK's
+  own, `(reader >> Contour(field="pressure", value=0.5))()`. `Contour`,
+  `SlicePlane`, `Clip`, `Threshold`, `ExtractSurface`, `Tetrahedralize`,
+  `SurfaceNormals`, `ConnectedComponents` and `Streamlines` make a dataset;
+  `Gradients`, `Elevation` and `CellQuality` add arrays to a shallow copy of
+  their input; `GhostCells`, `GenerateGlobalIds` and `MergePieces` take every
+  piece of a `vtkPartitionedDataSet` together, and the others run each piece.
+  Parameters are properties; an exception is VTK's error and is kept as the
+  algorithm's `error`. CPU only for now.
+- `vtk_to_dataset(..., copy=False)` and `dataset_to_vtk(..., copy=False)` share
+  memory on the CPU instead of copying: points, point and cell data, cell
+  types, offsets and connectivity (ids in VTK's width), ghost marks and global
+  ids, wherever the values are one contiguous block of the type Tack keeps
+  (anything that must change, such as a type, an origin, strips or polyhedra,
+  is copied). Shared VTK arrays become read-only Tack arrays that keep VTK's
+  alive, and the other way. `dtype=None` keeps each floating-point array in
+  its own type. The algorithms convert this way, so a pipeline copies nothing.
+- Examples 47-49: a VTK pipeline with Tack's filters in it, from a VTK reader
+  to VTK rendering; pieces of a `vtkPartitionedDataSet` through ghost cells,
+  contours and `MergePieces`; streamlines.
+- `integrator="rk45"` on `advect` and `streamlines`: steps that adapt to the
+  flow, as VTK's `vtkStreamTracer` with its RK45 (Cash-Karp, `vtkRungeKutta45`)
+  and its rules. `step_size` is the first step; a step whose error estimate
+  passes `tolerance` (a distance, 1e-6 by default) is tried again smaller, its
+  first stage kept; each step taken proposes the next, between `min_step` and
+  `max_step` (a fiftieth of `step_size` and twice it by default, VTK's
+  ratios), in either step unit. A particle's step goes with it between a GPU's
+  launches (bit for bit with one launch) and from piece to piece. On a swirl
+  at VTK's settings, Tack's RK45 takes about half of fixed RK4's points (42-44
+  a path, VTK 42) and lies within 2-3e-5 of the path, VTK's within 1-2e-5.
+- `max_length` on `advect` and `streamlines`, with any integrator: a path that
+  has gone that far stops (`TERMINATE`); in the length unit its last step
+  lands on it.
+- The VTK comparison harness (`benchmarks/vtk_compare`) times point gradients
+  against `vtkGradientFilter`, and the performance page says what its dashes
+  are: comparisons not made, not failures (VTK's Viskores filters have no cell
+  gradient, volume or centers; the Linux run timed VTK against Tack's CPU
+  alone).
+- Bases of any order on segments, quads, pixels, hexahedra and voxels
+  (`tack.dataset.bases`): `H1(data, order=p, basis=...)` from order 3 and
+  `L2(data, order=p, basis=...)` from order 2 (or on Gauss-Legendre nodes from
+  order 1), on Gauss-Lobatto nodes (the default, MFEM's for `H1`),
+  equispaced ones (VTK's Lagrange cells) or, for `L2`, Gauss-Legendre ones
+  (MFEM's default for `L2`). `H1` holds `p - 1` values per edge, `(p - 1)^2`
+  per quad face and `(p - 1)^d` per cell after the points, each cell reading
+  a shared edge in order from its lower point id and a face in the frame of
+  its own row, so cells turned every way share them; `L2` keeps each cell's
+  `(p + 1)^d` values. `interpolate`, `project`, `probe`, `gradients` and
+  curved geometry of any order work on them; polynomials of degree `p` come
+  back exactly.
+- `subdivide(data, level)`: curved or high-order cells as linear sub-cells on
+  each cell's lattice of `level` steps, fields at the lattice points (VTK's
+  `vtkCellGridToUnstructuredGrid`). A lattice point shared by cells is one
+  point, evaluated once, by the first cell holding it.
+- The MFEM interop takes `H1` from order 3 and `L2` from order 2 on quads and
+  hexahedra, and curved meshes of any order on them: on Gauss-Lobatto,
+  Gauss-Legendre and closed uniform nodes the values are copied in Tack's
+  numbering, on any other basis (Bernstein) evaluated at Tack's nodes,
+  exactly either way. `mfem_grid_function(data, field, mesh)` gives a field
+  back as an MFEM `GridFunction`, the same DOFs in MFEM's numbering.
+- VTK's Lagrange cells: `vtk_to_dataset` reads a grid of
+  `VTK_LAGRANGE_CURVE`, `_QUADRILATERAL` or `_HEXAHEDRON` cells of one order
+  `p` as linear cells on their corners with the geometry and point data in
+  `H1(order=p, basis="equispaced")`, VTK's nodes; `dataset_to_vtk(...,
+  higher_order=True)` writes a high-order or curved dataset of those shapes as
+  Lagrange cells of its largest order, each shared node one point, which VTK
+  evaluates as Tack does.
+- `contour`, `slice` and `slice_plane` take `subdivision=`: on the tensor
+  shapes, a field above order 1 or a curved geometry is cut on linear
+  sub-cells, by default as many lattice steps as the largest order of the
+  field and geometry, and only the cells whose field's Bernstein
+  coefficients can hold the value are refined. The surface has no cracks;
+  its error falls as the square of the step. `subdivision=1` cuts the cells
+  linearized at their corners; `tolerance=` (in the field's unit, a distance
+  for slices) chooses the fewest steps whose estimated error is within it,
+  from the Bernstein coefficients' distance from the corners' interpolation.
+- `subdivide`, and `contour` and `slice` on sub-cells, keep ghost marks: a
+  sub-cell takes its parent's, and a lattice point is marked as `carry` marks
+  the points it makes, so each piece's cut of a high-order field is its share
+  of the whole's. A shared lattice point has the same bits in every piece
+  holding it: an edge or face point is computed from that entity's own
+  values in a frame its corners' positions fix, and anything else in the cell
+  every piece chooses alike (the lowest global id, or the first centroid by
+  position). Pieces' surfaces merge with `merge_pieces` into the whole's.
+- `advect` and `streamlines` through curved cells (an `H1` geometry above
+  order 1) and with a velocity of any order, or in `L2`, on hexahedra,
+  voxels, quads, pixels and the order-2 tetrahedra, wedges and triangles.
+  The search from the points reads a curved cell and a high-order field
+  through its shape group's own view, so it inverts a curved cell by its own
+  map and evaluates the field as `probe` does: the paths are an RK4 over
+  probed velocities to 1e-12. `probe` on a curved geometry searches from the
+  points too, with the same answers as from the cells. Advection refused
+  both before. A mesh of one shape compiles its kernels in seconds; a curved
+  mesh of several shapes takes minutes on its first call.
+- `L2(..., layout=)`: how a tensor basis' values are stored, `"blocks"` (each
+  cell's together: MFEM's and VTK cell grids' layout) or `"cells"`
+  (cell-fastest, so neighbouring GPU threads read neighbouring values).
+  `"auto"`, the default, is `"cells"` for a tensor basis of order 3 or more on
+  a GPU and `"blocks"` elsewhere: on an RTX 4060 Ti cell-fastest reads 2.3x and
+  writes 3.6x faster at order 6, on the CPU blocks reads 1.5-1.8x and writes
+  about 2x faster. `to_device` transposes when the layout changes; the MFEM
+  interop reads and writes either; `space.blocks(values)` and
+  `space.indices()` read a field per cell whatever its layout.
+  `TACK_L2_LAYOUT=cells` (or `blocks`) overrides `"auto"` for a whole run.
+- `H1` and `L2` of any order on triangles and tetrahedra, with equispaced nodes
+  (`basis="equispaced"`, VTK's and gmsh's Lagrange simplices): values shared by
+  entity as on the tensor shapes (`p - 1` per edge, `(p - 1)(p - 2) / 2` per
+  triangle face, `(p - 1)(p - 2)(p - 3) / 6` per tetrahedron), a triangle
+  face's placed through its orientation in each cell. `interpolate`, `probe`,
+  `gradients` and `carry` take them; polynomials of the order are reproduced
+  exactly.
+- `contour`, `slice` and `subdivide` of fields above order 1 on triangles and
+  tetrahedra, on Freudenthal's sub-simplices of the cells' lattice: a lattice
+  point shared by cells is computed once, and in every piece holding it to the
+  same bits, so surfaces close and pieces agree.
+- Curved triangles and tetrahedra of any order: a geometry in `H1` of order 3
+  and up (equispaced) on simplices, located as it is (its Bernstein control
+  points bound it, Newton inverts its map) by `probe`, the cell locator and
+  advection, and subdivided by `subdivide`, `contour` and `slice` (order 2's
+  curved simplices too), each shared lattice point from its edge's or face's
+  own nodes.
+- VTK's Lagrange triangles and tetrahedra, both ways
+  (`dataset_to_vtk(..., higher_order=True)`, `vtk_to_dataset`), and MFEM's
+  triangles and tetrahedra of any order: closed-uniform values copied, MFEM's
+  default bases evaluated at Tack's equispaced nodes, exactly; curved MFEM
+  simplex meshes come across as curved geometry.
+- Wedges of any order (equispaced): `H1` and `L2`, curved wedge geometry,
+  subdivision for `contour`, `slice` and `subdivide` (Freudenthal's triangles
+  in layers), VTK's Lagrange wedges both ways, and MFEM's wedges.
+- `clip` and `threshold` of a curved geometry or a field above order 1, on
+  every shape `contour` subdivides: the cells whose field's Bernstein bound
+  lies wholly on the kept side stay as they are (curved, their fields of any
+  order), and only the others are cut, on linear sub-cells of their lattice
+  (`subdivision=`, `tolerance=`, as `contour` takes them). The whole part owns
+  the corners on the seam and the cut part's copies are `DUPLICATEPOINT`, so
+  reductions over the two count each point once, with or without ghost layers.
+- Exact crossings: `contour`, `slice`, `slice_plane` and `clip` of a field above
+  order 1 or a curved geometry put each crossing of a sub-cell's edge where the
+  field itself takes the value along it (a fixed number of Illinois steps from
+  the lattice values), and carry the geometry and every field there, so the
+  vertices lie on the true surface whatever the subdivision. A crossing on an
+  edge or face comes from that entity's own values in a frame its corners fix,
+  so neighbouring cells and pieces put it at the same bits. `exact=False` keeps
+  the crossing between the lattice values.
+- Bernstein spaces: `H1(data, order=p, basis="bernstein")` and `L2(...,
+  basis="bernstein")` on segments, quads, pixels, hexahedra, voxels, triangles,
+  tetrahedra and wedges, and a curved geometry in Bernstein form. The values are
+  the Bernstein polynomials' coefficients (control points, for a geometry),
+  which bound the cell's field or geometry. `interpolate` and `project` fill
+  them from values at the equispaced nodes. Each edge's and face's coefficients
+  are formed in a frame its corners' positions fix, so pieces sharing it agree
+  to the bit. Every filter sees the same polynomials as the equispaced Lagrange
+  space of the order.
+- VTK's Bezier cells (curves, quadrilaterals, hexahedra, triangles, tetrahedra,
+  wedges), both ways, as Bernstein spaces: `vtk_to_dataset` reads them,
+  refusing rational weights other than 1, and `dataset_to_vtk(...,
+  higher_order="bezier")` writes them. `higher_order=True` chooses Bezier cells
+  for a dataset with Bernstein spaces.
+- `H1` of order 2 on segments.
+- Element-to-DOF tables: `H1(data, order=p, dofs=table)` numbers a space's values
+  by an explicit table, a row per cell giving each node's value index, as MFEM
+  and VTK's cell grids store them, instead of by entity. A cell's corners must be
+  its points; the other nodes may be numbered freely (VTK's layout, every node a
+  point, included). Every filter reads it, a curved geometry may be numbered so,
+  and filters' outputs number by entity again.
+- Serendipity: `H1(data, order=2, basis="serendipity")` on quads, pixels,
+  hexahedra, voxels and wedges (the full order-2 space on triangles and
+  tetrahedra): the corners' and edges' values alone, the quad faces' centres and
+  the cells' insides determined from them. Every filter reads it as the full
+  order-2 space, with no kernels of its own; a geometry may be serendipity too.
+- VTK's classic quadratic cells, both ways: `vtk_to_dataset` reads
+  `VTK_QUADRATIC_QUAD`, `_HEXAHEDRON` and `_WEDGE` (quad8, hex20, wedge15) into
+  serendipity, `VTK_QUADRATIC_TRIANGLE` and `_TETRA` into the full order-2 space;
+  `dataset_to_vtk(..., higher_order="quadratic")` writes them (`True` chooses them
+  for a dataset with serendipity fields).
+- `interpolate` (and `node_views`) on a curved geometry of another order, on
+  hexahedra, quads and the other tensor cells: an `H1` field of order 3 on an
+  order-2 geometry, say. Each edge's and quad face's nodes are on the
+  geometry's trace there, read from that entity's own geometry values in a frame
+  its corners fix, so every piece holding it gets the same bits. It was
+  refused; curved simplices and wedges of another order still are.
+- `mfem_to_dataset(..., dofs="table")` and `mfem_field(..., dofs="table")` keep
+  a curved geometry and `H1` fields of order 2 and up numbered as MFEM numbers
+  them: the values as they are, in a space numbered by MFEM's element-to-DOF
+  table (`H1(..., dofs=table)`), on every basis whose values are copied.
+- A gallery in the Visualization Guide: contour, slice, clip, threshold,
+  surfaces with feature edges, cell quality, gradients, probe, subdivide,
+  pieces with ghost cells, streamlines, glyphs and pathlines on polyhedra,
+  tetrahedra, an order-4 field on straight hexahedra, an order-3 field on
+  curved ones and a mixed mesh, each picture a script in `docs/gallery/` (Tack makes what is
+  drawn, VTK draws linear polygons and lines), rebuilt by
+  `docs/gallery/build.py`.
+- `extract_edges(..., subdivision=n)`: each edge as `n` line cells through points
+  on a curved geometry's trace, so a mesh's outline shows its cells as they are.
+- `tubes(lines, radius, sides=12, radius_by=None)`: polylines or line cells as
+  tubes of quads with outward normals, the frame carried along each line so it
+  does not twist (VTK's vtkTubeFilter); `glyphs(data, vectors, scale=1.0,
+  scale_by=None, resolution=8)`: an arrow at each point along a vector field, as
+  closed triangle surfaces wound outward (vtkGlyph3D with its arrow). Both carry
+  the input's fields.
+- `gradients(data, field, at=L2(...))`: the gradient at each cell's nodes of an
+  `L2` space, exact there, so a high-order field's gradient keeps its order's
+  detail, which averaging to the points loses.
+- `surface_normals(..., weights="area")`: point normals with each cell's normal
+  weighted by its area, so a cut surface's slivers do not swing them.
+- `streamlines` and `advect` take `terminal_speed` (in the velocity's unit, or a
+  quantity), `vtkStreamTracer`'s TerminalSpeed: a path ends at its first point
+  where the speed is at or below it, the seed included, and the particle is
+  `TERMINATE` and `SLOW_SPEED` (a new `ParticleStatus` bit, 256). It holds over
+  pieces and launches as `max_length` does. Without it a path in a field that
+  is near zero but not zero (the carotid's outside its vessel) wandered on to
+  its length or step limit. VTK also drops a step whose two ends' average
+  speed is at or below the limit, so it may end a path one point sooner.
+- `integrate(data, fields=None)`: a dataset's measure and its fields' integrals
+  (`Integrals`), as VTK's vtkIntegrateAttributes, by Gauss quadrature in each
+  cell's reference element through its own map (collapsed onto simplices and
+  wedges; `integrate.quadrature`), so curved cells and fields of any order
+  integrate exactly to rounding; owned cells only, and over a
+  `PartitionedDataSet` every piece on every rank; the cells of the mesh's
+  dimension only, as VTK's (a volume leaves out its surfaces, lines and
+  vertices). Polyhedra take cell data.
+- `warp` by a displacement of higher order than the geometry (a finite-element
+  solution, as MFEM's examples displace their meshes) lifts the geometry into
+  its space, so the output is curved; a 2-vector displacement (a 2D problem's)
+  moves x and y.
+- The MFEM interop reads meshes whose nodes are in MFEM's older collections
+  ("Linear", "Quadratic", "QuadraticPos", "Cubic", as `escher-p3.mesh`), and
+  periodic meshes, whose nodes MFEM keeps per element, with an `L2` geometry.
+- An MFEM gallery in the Visualization Guide: seven of MFEM's examples (Poisson
+  on the curved Escher knot and Fichera corner, elasticity warped and in DG,
+  adaptive refinement, the curved sphere, DG advection on a periodic mesh),
+  solved with PyMFEM, imported with `tack.interop.mfem` and drawn from Tack's
+  filters (`docs/gallery/mfem_examples.py`).
+- `vtk_to_dataset` reads a `vtkCellGrid` (VTK's discontinuous-Galerkin cells, as
+  `vtkCellGridReader` reads `.dg` files): its cells on the shape attribute's
+  corners, `C1` attributes copied (shared as `H1`, per cell as `L2`), `constant`
+  ones as `Constant`, and every other `HGRAD` or Bezier basis resampled by VTK's
+  evaluator onto Tack's equispaced space of its order, exact where the spaces
+  agree. `HCURL`, `HDIV` and pyramids' rational bases are left out with a
+  warning, curved pyramids refused. It needs a VTK newer than 9.7.1, with
+  `vtkCellAttribute`'s cell-type accessors and the evaluator's interpolate-only
+  mode. `test_vtk_cell_grid.py` holds every `.dg` file of VTK's test data to
+  VTK's evaluator, cell centres, probe, ranges, linear cells and transform (it
+  skips without them).
+- `dataset_to_vtk(data, cell_grid=True)` writes a `vtkCellGrid`: each shape's
+  cells a DG cell type (`vtkDGCell.SetCellSpec`), the geometry its shape
+  attribute, order 1 in VTK's complete basis `C` (shared for `H1`, per cell for
+  `L2`), higher orders in its arbitrary-order basis `A` (VTK's `A` nodes are
+  Tack's equispaced nodes in Tack's order, which the tests show on hexahedra,
+  quads, tetrahedra and wedges), `Constant` fields as `constant`. Reading takes
+  each type's corners from its cell spec and orders types by the specs'
+  offsets, so a grid round-trips.
+- `vtk_to_dataset` reads every VTK higher-order cell Tack has a shape for, of any
+  shapes, dimensions and orders in one grid (Lagrange, Bezier, quadratic,
+  biquadratic, triquadratic, quadratic-linear, the 7-node triangle and cubic
+  lines, with linear cells beside them): each type's nodes matched to Tack's by
+  VTK's parametric coordinates and copied, and where Tack's cell has nodes a
+  VTK cell lacks, VTK's own interpolation functions give them, exactly.
+  `test_vtk_higher_order.py` holds VTK's higher-order test files and one cell of
+  each type to VTK's interpolation, derivatives, contours, slices, clips,
+  boundaries and edges (it skips without VTK's test data).
+- A field's nodes on a curved simplex or wedge geometry of another order (an
+  order-4 field on quadratic tetrahedra, VTK's quadratic cells among them) are
+  placed where the geometry puts them: on edges and quad faces its trace there,
+  as on hexahedra since #217, and on triangle faces its trace in the face's
+  canonical frame (its corners by position) evaluated in the geometry's
+  Lagrange or Bernstein basis (`views._CurvedTriangleNodePosition`), so every
+  piece holding a face gets the same bits. They were refused.
+- `dataset_to_vtk(copy=False)` and `vtk_to_dataset(copy=False)` share Metal arrays
+  with VTK, with any VTK: on Apple silicon a Metal buffer is host memory, so VTK
+  holds views of the buffers themselves (after one wait), and with Metal the
+  default device they come back as the same buffers. VTK's own memory is wrapped
+  in place where it lies on whole pages and copied to Metal otherwise, so the
+  dataset is on Metal throughout. Metal's `wrap_ptr` (and
+  `tack.array_from_ptr(..., device="metal")`) takes a NumPy array of host memory
+  for this.
+- `convert` takes a `Field` and gives it in another unit, a new field in the
+  same space, scaled and offset on the device, as a dataset's named field
+  converts; before, a field converted only inside a dataset.
+- `tack.set_default_float(tack.f64)` and `tack.get_default_float()`: the
+  float type of arrays nothing else types (constructors without a `dtype`,
+  Python floats, `vec`/`mat` types without a component type, implicit
+  arrays) and of `tack.dataset`'s constructors, sources and readers. f32
+  unless set; kernels' precision still follows their arrays.
+- Every `H1`, `L2` and `Constant` field view on cells with a reference element
+  numbers its own nodes: `NODES` per cell, node `k` at `node_parametric(k)`,
+  its value `dof(c, k)` stored at `dof_index(c, k)`. One kernel computes a
+  field at another's nodes on every shape, space, order and basis
+  ([Work at a field's nodes](docs/visualization/write-a-mesh-algorithm.md#work-at-a-fields-nodes)).
+  Order 1 had no `dof_index` and no node count of its own; a loop over the
+  shape's `NUM_QUADRATIC`, the quadratic element's nodes, wrote nothing on
+  segments, whose order-2 view numbers its nodes in a tensor basis.
+- A dataset's fields may share a name in different spaces, as VTK's point and
+  cell arrays do: `data.fields["p", td.Constant]` (a kind of space, or the
+  space itself) picks one; algorithms take `("p", td.H1)` wherever they take a
+  field's name, and `fields="p"` on a filter keeps every field of that name.
+  `data.fields.named(name)` and `data.fields.entries()` list them.
+- `vtk_to_dataset(grid, polyhedral="split")`: a VTK grid mixing polyhedra with
+  shaped cells as a `PartitionedDataSet` of two pieces over the same points --
+  the shaped cells an `UnstructuredTopology`, the polyhedra a
+  `PolyhedralTopology` -- sharing positions and point fields, each point owned
+  by one piece (the other marks it `DUPLICATEPOINT`), global ids the grid's
+  point and cell ids. A CFD mesh of 20.9M hexahedra, 67K wedges and 508K
+  polyhedra reads in 4.6 s and 14.7 GB (`copy=False`), where reading every cell
+  as a polyhedron did not finish in 64 GB.
+- `vtk_to_dataset` finds tetrahedra, hexahedra, wedges and pyramids that are
+  inside out (corners in the reverse of VTK's order, as some converters write
+  prisms: negative volumes, inward faces) on every read -- a kernel screens
+  every cell, the volume decides -- and warns, naming `orient=True`, which now
+  turns them outward too. A tangled cell, negative at some corners but not
+  inside out, is left. Polyhedra are checked by their volumes (`cell_geometry`)
+  once their faces are matched: a region of them wound inward together passes
+  the matching, and, in a split read, nothing compares them with the shaped
+  piece; they are named in a warning, and `orient=True` turns them outward.
+  VTK's own `concavePolyhedron.vtu` is such a polyhedron (exact signed volume
+  -11). A CFD mesh's 66,606 inside-out wedges took 0.3 s to find
+  among 21M cells. Wedges are the common case: VTK's documentation gave their
+  corner order the reverse of its code until March 2026, and writers that
+  followed it wrote them inside out.
+- Implicit arrays read one value from the host, as a stored `Array` does:
+  `values[k]` (a Python number, or a NumPy array of a vector's components;
+  negative `k` from the end) and `len(values)`, so `data.geometry.values[0]` works
+  on images and rectilinear grids. Each read is one launch; iterating raises, as
+  on an `Array`. Underneath, a `@tack.func` may now have a host implementation
+  (`@name.host`), which Python calls while kernels inline the device body.
+- A finite-volume guide covering cell/face associations, orientation, integrated
+  flux balances and Perot velocity reconstruction, with a checked example on
+  shaped and polyhedral meshes in the documentation validation suite.
+- `project(..., average="nodes")`: into `Constant` (or order-0 `L2`), the mean
+  of the source's own values in each cell (its `NODES`), as
+  vtkPointDataToCellData and Viskores' CellAverage take it, for every VTK
+  cell type and order.
+- Write a Filter (Visualization Guide) rewrites a sixth built-in, `contour` of
+  a triangle mesh: points made on edges (`Interpolate`), lines inside cells
+  (`Pieces`), held to `td.contour` every part. Its section takes `carry` apart:
+  each map, each kind of entity's keyword, and what goes with each (point and
+  cell fields, the geometry, sets, ghost marks, global ids, the frame), which
+  the guide covered only in a table.
+- `merge_points` takes polyhedral, polygonal and polyline topologies. A
+  polyhedral mesh's faces are matched again on the merged points, so the copies
+  of a face that pieces each stored once, with one cell, become one face with
+  both: OpenFOAM's processor pieces put together without merging (an AhmedML
+  volume: 1,561,917 copied points of 24,358,265, 1,494,132 faces stored twice)
+  merge in 13 s into the mesh their solver ran on, whose boundary is the walls
+  and the far field (40,700 faces not at rest, not 3,028,964) and whose body is
+  one piece, not 116. Copies wound the same way, or a face with two cells on a
+  side, are refused.
+- `CellLocator` locates in polyhedra that are not star-shaped from the mean of
+  their points, as snappyHexMesh's concave cells at walls are: each one's cell
+  point moves into its kernel, where it sees all of its faces, given as
+  weights on its points so linear fields stay exact
+  (`CellLocator.moved_cell_points`). `probe`, `advect` and `streamlines` use
+  it. On an AhmedML volume (21.5M cells read as polyhedra), 119 of the 131
+  cells the locator refused have a kernel.
+- `vtk_to_dataset(grid, merge_points=True)` (or a tolerance) merges an
+  unstructured grid's coincident points before reading it, as a mesh written
+  per processor needs: the polyhedra's faces are matched once, and with
+  `polyhedral="split"` every point is owned by one piece. Merging the pieces
+  afterwards could leave a point owned twice or by no piece.
+- `generate_global_ids` of a filter's outputs from pieces without ghost
+  cells (which lost their marks, so reductions refuse them) matches every
+  point and cell and marks the owners, so `statistics` and `entropy` then give
+  the whole's answer; the refusal names it. Such outputs keep their cells'
+  marks from their source cells.
+- `world_gradient(cells, u, c, pc)`, the device function `gradients` uses:
+  a field's gradient in the world at a parametric point, for kernels that
+  need it where `gradients` does not put it.
+- `world_hessian(cells, u, c, pc)`: a field's second derivatives in the world
+  at a parametric point of a solid cell, for kernels. By the chain rule
+  through the geometry: the field view's new `parametric_hessian` less the
+  geometry's new `geometry_curvature` along the world gradient (zero where the
+  map is affine), taken to world axes by the inverse Jacobian. Analytic from
+  the shapes' new `shape_hessian` and `quadratic_hessian` at orders 1 and 2,
+  and from the bases at any order on tensor shapes, simplices and wedges
+  (Lagrange and Bernstein), a wedge's from its triangle factor's second
+  derivatives and its segment factor's.
+- `world_jet(cells, u, c, pc)`: a scalar field's value, world gradient and
+  world Hessian together (on surfaces, `world_gradient`'s in-plane gradient
+  and a zero Hessian), from the field views' new `parametric_jet`, which
+  reads each of the cell's values once. Each read of an `H1` value of order 3
+  or more resolves where its node is stored, about two thousand lines of
+  generated CUDA, so a kernel that needs several of the three compiles that
+  once.
+- `HDiv` (Raviart-Thomas) and `HCurl` (Nedelec, first kind): at order 1 on
+  hexahedra, voxels and tetrahedra, and of any order on hexahedra and voxels,
+  where the values on shared faces and edges are kept in the face's or edge's
+  own frame, so cells that number their corners differently agree.
+  `HDiv` holds one value per face, its integrated flux along the face's
+  stored normal (the convention of oriented face values, `upwind_flux` and
+  `net_flux`); `HCurl` one value per edge, its tangential integral from the
+  low point id to the high one. A field view's `parametric_value(c, pc)` is
+  the field in the reference cell, and `hdiv_value` and `hcurl_value` map it
+  into the world through the contravariant and covariant Piola maps (the
+  contravariant by |det J|, so inside-out cells agree with their neighbors);
+  `hcurl_curl` gives an `HCurl` field's curl and `hdiv_div` an `HDiv` field's
+  divergence.
+- `H1.quadratic_count(shape)`: the nodes a view of an `H1` space of order 1
+  or 2 reads on a shape's cells as the shape's own functions, for kernels
+  that loop over them.
+- `td.edge_crossing(level, a, b, va, vb, xa, xb)`, the rule every built-in cut
+  places a crossing by, for filters of one's own: the ends in the order to
+  interpolate from (the end first by position) and the weight, or the end
+  itself when the crossing is that point.
+- `advect(..., step_unit="length")`, as `streamlines` takes it: `step_size` an
+  arc length along the path rather than a time, over pieces too.
+- `UnstructuredTopology.cell_points()`, each cell's points sorted and unique, as
+  polyhedral and polyline topologies give them.
+- `ghost_cells` takes polyhedral pieces (OpenFOAM's processor pieces read as
+  polyhedra): each ghost is sent with its faces wound out of it and the
+  piece's faces are matched again, so a face a ghost shares with the piece's
+  own cell is one face; `update_ghosts` and `generate_global_ids` run on
+  them. The split reading's two pieces are ghosted together once the shaped
+  piece is made polyhedral (`as_polyhedra`), and then reduce exactly.
+- `extract_surface` of a `PartitionedDataSet` gives the whole's surface, a
+  piece each: pieces without ghost cells take the faces between them for
+  boundary, so the faces of every piece's surface are matched over the pieces
+  by their points and those two pieces hold are left out; the surface's points
+  are owned once. On pieces with ghost cells it is each piece's own surface.
+- `tack.interop.vtk.algorithms.Probe`, `td.probe` as a VTK algorithm in the
+  manner of `vtkProbeFilter`: the source's fields (input port 1,
+  `SetSourceConnection`/`SetSourceData`) at the input's points, on the input's
+  structure, with `valid`.
+- A `device` parameter on every Tack VTK algorithm: the filter runs there, its
+  input moved there once (and kept, so the filters after it find it there).
+  By default a filter runs where its input's memory is, which for a reader's
+  output is the host.
+- `vtk_to_dataset(..., copy=False)` and `dataset_to_vtk(..., copy=False)`
+  share GPU memory too. A VTK grid whose points, cells or data arrays are
+  Viskores arrays on a GPU (as `array_to_vtk` makes, in a VTK with DLPack and
+  Viskores' arrays) becomes a dataset on that device sharing them, whatever
+  the default device, its other arrays copied there; a dataset on a GPU
+  becomes a VTK grid of Viskores arrays over its points, field values,
+  offsets and connectivity. They were copied to the host before, so a
+  pipeline of VTK and Tack filters on a GPU now hands its data across
+  without leaving the device.
+- Tack's VTK algorithms (`tack.interop.vtk.algorithms`) take trees of datasets,
+  a `vtkMultiBlockDataSet` or a `vtkPartitionedDataSetCollection`, as Exodus,
+  IOSS, CGNS, EnSight and OpenFOAM readers give, and give a tree of the same
+  shape with its blocks' names and data assembly. Each partitioned dataset in
+  the tree, a `vtkMultiPieceDataSet` block too, is filtered whole, so
+  `GhostCells` and `GenerateGlobalIds` see all its pieces.
+- Every argument of a wrapped Tack filter is a parameter of its VTK algorithm,
+  with the filter's default (`Contour(merge_points=False)`, `Streamlines(integrator="rk45",
+  max_length=...)`); a required one left unset is named. A class wraps a
+  `tack.dataset` function by naming it (`FUNCTION`).
+- Fields are chosen as VTK's filters choose them: by name, by name and where VTK
+  keeps it (`("p", "cells")`, for a point and a cell array of one name), or with
+  `SetInputArrayToProcess`. VTK's implicit functions (`vtkPlane`, `vtkSphere`,
+  `vtkBox`, `vtkCylinder`, `vtkPlanes`, `vtkImplicitBoolean`) work where Tack's
+  do, such as `Clip`'s `by`.
+- Tack's VTK algorithms work over MPI ranks: the filters whose answer needs every
+  piece (`GhostCells`, `GenerateGlobalIds`, `MergePieces`, and the reductions)
+  take the other ranks' pieces, the ranks taken from VTK's global controller as
+  VTK's parallel filters take them (its communicator made mpi4py's by
+  `vtkMPI4PyCommunicator`; `pvbatch` sets one), or given as `world=` (an mpi4py
+  communicator or a `World`), as with VTK's wheels, which have no MPI.
+  `tack.interop.vtk.world()` gives VTK's processes as a `tack.communication.World`.
+- A VTK algorithm (`tack.interop.vtk.algorithms`) for every `tack.dataset` filter
+  but the summaries and the finite-volume operators that take values on faces,
+  named as the filter in CamelCase: `ExtractCells`, `ExtractGeometry`,
+  `ExtractExtent`, `Mask`, `Slice`, `BoundaryFaces`, `ExtractEdges`,
+  `FeatureEdges`, `Tubes`, `Glyphs`, `CheckWinding`, `MergePoints`, `Triangulate`,
+  `AsPolyhedra`, `AsPolygons`, `Shrink`, `Subdivide`, `Transform` (also of a
+  `vtkTransform` or `vtkMatrix4x4`), `Warp`, `Cylindrical`, `Spherical`,
+  `CellGeometry`, `FaceGeometry`, `CellCenters`, `FaceCenters`, `EdgeLengths`,
+  `ImplicitValues`, `CellIds`, `PointIds`, `FlowQuantities`, `Project`,
+  `ValuesAtCenters`, `Interpolate`, `Magnitude`, `Dot`, `Cross`, `Composite`,
+  `LogValues`, `Convert`, `Jump`, `UpwindFlux`, `Voxelize`, `Advect`,
+  `ExtractPoints`, `ThresholdPoints`, `MaskPoints`, `PointNormals`, `Outliers`,
+  `VoxelDownsample`, `Deposit`, `SphDensity`, `SphInterpolate`, `HaloCatalog`,
+  `Split`, `GhostPoints` and `RemoveGhosts`. Values on faces or edges come out as
+  the faces' polygons or the edges' lines with the values as cell data; a grid a
+  filter samples onto (`Voxelize`, `Deposit`) may be a `vtkImageData`.
+- `ExtractSurface`, `ConnectedComponents`, `Streamlines` and `Advect` take the
+  pieces of a `vtkPartitionedDataSet` together, as their Tack filters do: the
+  surface leaves out faces the pieces share, regions join across pieces, and
+  particles go from piece to piece (and rank to rank). They ran piece by piece.
+- `Streamlines` and `Advect` take their seeds from the points of the data on
+  input port 1 (`SetSourceConnection`), as `vtkStreamTracer` does, when `seeds`
+  is not given; `SphInterpolate` takes its particles there, as
+  `vtkSPHInterpolator` does.
+- `Statistics`, `Entropy` and `Integrate`, VTK algorithms of `td.statistics`,
+  `td.entropy` and `td.integrate` that reduce all their input (every dataset of a
+  partitioned dataset or a tree, on every MPI rank) to one answer, as VTK's
+  `vtkDescriptiveStatistics` and `vtkIntegrateAttributes` do. `Statistics` and
+  `Entropy` give a `vtkTable`, a row per field and a vector field's components one
+  by one; `Integrate` gives `vtkIntegrateAttributes`' one vertex at the centroid,
+  each field's integral on it and the measure as `Length`, `Area` or `Volume`.
+- The VTK algorithms take an AMR hierarchy (`vtkOverlappingAMR`) whole, as one
+  `AMRDataSet`, where the Tack filter takes one: `Probe` (as its source),
+  `Statistics`, `Entropy`, `Integrate`, `Voxelize` and `GhostCells`, and the new
+  `AverageDown` (`td.average_down`, its input left as it was). A region that a
+  finer box covers, and a point that a sibling box holds, counts once.
+  `GhostCells` and `AverageDown` give a `vtkOverlappingAMR` of the input's boxes,
+  and the next AMR filter takes the hierarchy as it was made, ghost layers too.
+  The others run box by box, as Tack's filters do on AMR, each level's boxes as
+  pieces and the cells finer boxes cover left out: a field filter gives the
+  hierarchy with its fields, one that makes a dataset a
+  `vtkPartitionedDataSetCollection` with a partitioned dataset per level.
+  `GenerateGlobalIds`, `Streamlines` and `Advect` refuse a hierarchy. Over MPI
+  ranks each rank holds its own blocks, as VTK spreads a hierarchy.
+- `vtk_to_dataset(..., world=)`: the ranks a `vtkOverlappingAMR`'s blocks are
+  spread over, a `World` or an mpi4py communicator, by default VTK's (`world()`).
+- `RunningStatistics`, `TimeDerivative`, `Advection`, `Pathlines` and
+  `Streaklines`, VTK algorithms of Tack's temporal filters, in two modes. In
+  situ, each execution takes the step the input holds and gives the output at
+  it, stamped with its time; the same step again is not taken twice, and a step
+  back in time, a parameter changed or VTK's `NO_PRIOR_TEMPORAL_ACCESS` reset
+  starts over. Driving, the filter asks its input for the steps it needs, one
+  per pass and never one it has taken: the statistics, particles and paths over
+  every step (or those in `time_range`) in one output with no time (time in the
+  data: `step` and `time` on the particles, `time` on the paths' points), and
+  streaklines and derivatives at the time requested, going on from the steps
+  taken. A filter drives where its input has time steps and the pipeline can go
+  back in time; `mode=` chooses.
+- `Contour` and `Threshold` take a vector field's `component` (the first by
+  default, as VTK's filters; `Threshold` also `"magnitude"`), as a view of the
+  vector's values: they refused a vector field. Found running VTK's Python tests
+  on Tack (`multipleComponentContour.py`).
+- `transform(..., vectors=, normals=)`: fields that turn with the map, its linear
+  part applied to a vector (a velocity, a displacement) and its inverse transpose
+  to a normal, made unit length again so it stays normal to the moved surface.
+- `Field(space, values, unit, gradient=)`: a field's world gradient where
+  something other than its basis gives it, such as a solver's own
+  reconstruction, as a field on the same topology (3 values each for a scalar,
+  3k row by row for a vector of k). `world_gradient`, `world_jet` and
+  `gradients` read it, so `flow_quantities` and every kernel built on them use
+  the solver's derivatives; the Hessian it does not determine is NaN.
+- Examples 50-53 in `packages/tack-vis/examples/`: VTK pipelines on real files
+  from VTK's test data, each from a reader to a rendered picture (`--png`) and
+  checked against VTK's filters. 50 is an Exodus file's collection
+  (`disk_out_ref.ex2`, IOSS): an isosurface, streamlines as tubes, the surface.
+  51 is an OpenFOAM case's multiblock (`squareBend`): gradients, vorticity, a
+  slice, integrals over the inlet and outlet. 52 is an OpenFOAM time series (the
+  cavity) through `Pathlines`, driving and in situ. 53 is an Enzo AMR file:
+  statistics and the mass over the hierarchy, a slice of each level. The files
+  are fetched once by their SHA-512 (`_vtk_data.py`, `vtk_data.sha512`) or read
+  from `TACK_VTK_DATA`; each takes `--arch` for the device. The VTK examples
+  (47-53) draw their pictures with VTK's views and representations
+  (`vtkViewsScivis`) where the VTK has them, VTK master, and with actors and
+  mappers on VTK 9.7.1, chosen at run time (`_scene.py`).
+- The VTK guide lists every algorithm with VTK's filter that does the same work,
+  and has a section each on pieces and trees, MPI ranks, GPUs, summaries, AMR
+  hierarchies and time.
+- A field argument may be an object whose `on(data)` gives the `Field` on `data`,
+  as a field expression is. Over a `PartitionedDataSet`, `statistics`, `entropy`
+  and `integrate` call it once a piece, so an expression reduces over pieces as a
+  name does.
+- Fields evaluated where they are read: a space may declare itself `evaluated`
+  (its view computes the field by `value` and `corner_value`; it stores no values),
+  `continuous` (its crossings are shared between cells, as `H1`'s are), its
+  `default_subdivision` and its `integration_order`, and give `rebind` and
+  `stored`. `contour`, `subdivide`, `clip` and `threshold` read such a field
+  through its view (`threshold` by its values at the lattice points, not as cell
+  data), filters make it again on their output, `integrate` integrates
+  it by quadrature to its order, and `statistics`, `entropy`, `owned_values` and
+  `dataset_to_vtk` read its stored values. `Space` declares each, with its
+  default.
+- A publish workflow for tack-core (`.github/workflows/publish.yml`). On a
+  release tag it checks the tag is the version, builds the wheel and the sdist,
+  `twine check`s them, installs tack-core alone from each, and uploads to PyPI
+  with trusted publishing after the `pypi` environment's approval. Run by hand,
+  it uploads to TestPyPI, the dry run. `RELEASING.md` has the one-time setup and
+  a release's steps. tack-vis is not published; it is installed from the
+  repository at the release tag.
+
+### Changed
+
+- **Breaking:** `clip` and `threshold` of a curved geometry or a field above
+  order 1 return `PartitionedDataSet([whole, part])`, the cells kept whole and
+  the cut part, where both went by the cells' corner values alone (and `clip`
+  made curved cells straight). Straight cells with order-1 fields, and
+  `threshold` by a cell field, still give one `DataSet`.
+- **Breaking:** the cuts above (with `exact=True`, the default) move their
+  vertices onto the field's roots: positions and carried values differ from the
+  lattice values' interpolation (by about the square of the steps); the cells are
+  the same.
+- **Breaking:** an array is made only of a type its device supports:
+  `tack.empty` and every constructor, copy and `to_device` on it,
+  `array_from_ptr` and DLPack imports raise `TypeError` for an `f64` array on
+  Metal (or on a Level Zero device without `f64`), where before the array was
+  made and the first kernel given it raised.
+- **Breaking:** `data.fields` is a `Fields` mapping, not a `dict`. A name two
+  fields share is refused rather than read as one of them (`KeyError`, from
+  `get` and `pop` too); its keys are the names, and `(name, space)` for a
+  shared name, so `dict(data.fields)` keeps every field. A field of another
+  topology is refused as it is put in, not when an algorithm reads it.
+- **Breaking:** `vtk_to_dataset` reads a point array and a cell array of one
+  name as two fields of that name, no longer renaming the cell one to
+  `"<name> (cells)"` with a warning; `dataset_to_vtk` writes both under the
+  name. Writing two point (or two cell) fields of one name is refused.
+- **Breaking:** `project` into `Constant` (or order-0 `L2`) gives each cell
+  the source's average over it, its integral divided by the cell's measure,
+  by quadrature through the cell's own map, where it took the mean of the
+  cell's corner values. The two agree for a linear field on a tetrahedron, a
+  triangle or an image's (or rectilinear grid's) boxes, which still take the
+  corners' mean; they differ on pyramids (the apex weighs a quarter of a
+  linear field's average, not a fifth), on distorted cells, and for fields of
+  higher order, whose nodes other than the corners the corner mean never
+  read. Polyhedra, polygons and polylines average a point field over the
+  pieces they are cut into. `average="nodes"` gives VTK's mean.
+- **Breaking:** `extract_surface` puts a surface on the points its faces use,
+  renumbered in order, as VTK's geometry filter does, not on all the input's
+  points. A surface's point statistics are now the surface's, and the surface
+  of pieces matches 1.24M points on the AhmedML mesh, not 45.6M. A 2D mesh
+  passed through keeps its points if its cells use them all. The fresh
+  boundary's renumbering is kept with it, so a repeated call still costs only
+  the carry.
+- **Breaking:** the VTK algorithms of points, lines and surfaces give `vtkPolyData`,
+  as VTK's filters do, where they gave a `vtkUnstructuredGrid`: `Contour`,
+  `Slice`, `SlicePlane`, `ExtractSurface`, `BoundaryFaces`, `ExtractEdges`,
+  `FeatureEdges`, `SurfaceNormals`, `Tubes`, `Glyphs`, `Triangulate`,
+  `AsPolygons`, the face filters, `Streamlines`, `Advect`, the temporal particle
+  filters and the point-cloud filters. They now feed `vtkPolyDataMapper` and VTK's
+  polygonal filters (`vtkCleanPolyData`, `vtkStripper`, `vtkDecimatePro`), which
+  refused them. `Clip` and `MergePoints` give `vtkPolyData` for a `vtkPolyData`
+  input, as `vtkClipPolyData` and `vtkCleanPolyData`, and the filters that keep
+  their input's kind (`Warp`, `Transform`, `Probe`, ...) keep a polygonal one. The
+  cells go into the polydata's vertices, lines and polygons, shared where they are
+  all of one kind. Found running VTK's Python tests on Tack.
+- **Breaking:** a kernel over shape-based cells that reads their faces or
+  edges (`face_id`, `face_side`, `face_orientation`, `face_position`,
+  `edge_id`, `edge_sign`) asks for them:
+  `for_each(kernel, data, "cells", ..., incidence="faces")`, or `"edges"`, or
+  both, and `domain_view(domain, group, incidence=...)` the same. They are
+  derived if they are not yet. A cell view had them whenever the faces or
+  edges had been derived, by this filter or any before it, so the same kernel
+  over the same cells compiled again once another filter had derived them,
+  and the disk cache kept gaining entries from one run of a program to the
+  next as the order of its filters changed (about 25 a pass of the quick
+  tests, from `contour`, `project` and `subdivide`). A view now has only what
+  it asks for; a curved geometry still reads the incidence it needs.
+- Averages over each point's cells -- `gradients(at="points")`, the
+  cell-to-point `project` and `surface_normals` -- are segmented means over
+  the point links (`segment_reduce(..., op="mean", empty="keep")`), the values
+  read through the links, not gathered. A point of up to 256 cells sums them
+  in the links' order as before, so ordinary meshes give the same bits; a
+  point of more is summed by chunks, where one thread walked its links. At
+  the apex of 403,200 tetrahedra on an M1 Max's GPU: point gradients 294 to
+  5.7 ms, cell to point 271 to 3.4. On the CPU, where one core walks such a
+  point quickly, about the same (5M tetrahedra 14.8 to 14.1 ms; the apex 1.7
+  to 2.4).
+- `tack.interop.vtk` is a package (its names unchanged), with `algorithms`
+  beside it.
+- A device without f64 (Metal, a Level Zero device without fp64) refuses a
+  kernel that computes anything in f64 -- a `tack.f64` cast, an f64 constant,
+  local or parameter, from the kernel or a function it inlines -- with a
+  `TypeError` naming the cause, once its types are known and before code is
+  generated (`refuse_f64`). Metal's code generator refused only f64 casts,
+  with a `NotImplementedError`. A CPU posing as such a device, as the dataset
+  device tests make one, refuses them too, so those tests find on the CPU what
+  only Metal's compiler found before (subdivision's `tack.f64` casts, on the
+  higher-order branch).
+- Contours and slices of order-2 fields on hexahedra and quads, which were
+  refused, are cut on sub-cells; of a curved geometry on them, which were
+  linearized at the corners, likewise (`subdivision=1` for the corners).
+- Subdividing a scalar field in a tensor basis (contour and slice above order
+  2, `subdivide`) reads each cell's values once, not once a lattice point: an
+  order-6 `H1` field's `dof_index` for every node at every point was most of
+  the time. 32^3 hexahedra, an order-6 contour: Metal 457 to 122 ms, the CPU
+  278 to 166 ms; order 3, Metal 31 to 27 ms. The values are the same, to the
+  bit.
+- Locating a point in a curved cell (the cell locator, `probe`, advection on a
+  curved geometry) reads the cell's nodes once, not twice at each Newton
+  step through `dof_index`: an order-3 curved probe of 100k points on 16^3
+  hexahedra, Metal 177 to 73 ms, the CPU 52 to 28.5 ms. The same cells and
+  coordinates, to the bit.
+- The MFEM interop copies a positive basis' coefficients (`H1Pos`, and `L2`
+  with `BasisType.Positive`) into Tack's Bernstein space of that order, on
+  quads, hexahedra, triangles, tetrahedra and wedges, permuted as nodal values
+  are; they were evaluated at Gauss-Lobatto (or equispaced) nodes.
+  `mfem_grid_function` gives a Bernstein field back in MFEM's positive basis.
+- The CPU backend keeps far less memory per compiled kernel: compiled code shares
+  JIT engines (32 modules to one) instead of an engine each, the LLVM module is
+  dropped once its code is made, and a compiled variant keeps only the launch
+  bounds of its IR, not the body. A small kernel's variant went from about
+  965 KB to 75 KB, a high-order contour and clip from 51 MB to about 21 MB, and
+  the quick test tier's workers peak at 1.5 GB instead of 4.9.
+- `transform` keeps an image an image: the affine map is folded into its origin
+  and direction (`UniformCoordinates`, any invertible direction, a shear too),
+  in double precision, and no position is stored; VTK receives a `vtkImageData`
+  with that direction matrix. A singular map still gives stored positions.
+- `vtk_to_dataset` converting to `f32` without an `origin` chooses one where
+  the data are more than 100 times farther from zero than they are wide: the
+  lower corner of VTK's bounds, rounded down, the same for a composite's
+  pieces. Far points kept 0.2 m steps on a survey's coordinates; they keep
+  their precision. `point_cloud` chooses its origin for `f64` positions by the
+  same rule (`automatic_origin`): a small cloud about zero got (-1, -1, -1),
+  coarsening its values.
+- `contour` gives no surface, lines or vertices in a cell with a NaN among its
+  values: the surface stops at the cells holding numbers. A NaN was below
+  every level, and a crossing on an edge to one lay at the edge's finite end,
+  a point not in the data; VTK's lies at NaN.
+- `clip` scans its five kinds of counts one at a time through one buffer and
+  lets the cells' counts and offsets go before merging points; `contour` lets
+  its cells' counts and offsets, and the per-corner arrays it copied when
+  dropping repeated triangles, go before its merge. Clip's peak on 5M
+  tetrahedra fell from 609 to 304 MiB of arrays, contour's on Damavand from
+  3.47 to 3.19 GiB; the outputs are the same.
+- `extract_extent` of a flat image or rectilinear grid (a 2D grid in Tack)
+  takes VTK's extent and rates in three axes, as VTK gives a flat image's
+  (`(i0, i1, 0, 0, k0, k1)`), the flat axis's ignored; it took one pair per
+  axis the grid has only.
+- `PointLocator.nearest`, and with it `outliers`, `point_normals` and
+  `ghost_points` by `k`, take any number of neighbours: up to 32 are kept in
+  private arrays as before, more in the output's rows. `k` was at most 32
+  (PyVista's `point_cloud_neighbors.py` asks for 40).
+- `H1` and `L2` without a `basis` take the mesh's own family above order 2:
+  equispaced where the mesh has triangles, tetrahedra or wedges (the one family
+  they have), Gauss-Lobatto otherwise. The default was refused on simplices.
+- `extract_edges` of an `L2` geometry draws each cell's own edges on points of
+  their own along the cell's map (`subdivision` segments each): its cells need not
+  meet. It was refused.
+- `integrate` takes point data on polyhedra, polygons and polylines, exactly:
+  the values are linear on their sub-tetrahedra, triangles and segments. It
+  took cell data alone.
+- A curved `L2` geometry on triangles, tetrahedra and wedges (a mesh displaced
+  by a DG field, a periodic mesh of order 2 or more) maps, measures and inverts
+  its cells as its `H1` twin (`_L2SimplexGeometry`, `_L2WedgeGeometry`, over
+  the `_SimplexGeometry` and `_WedgeGeometry` the `H1` ones now share). It was
+  refused.
+- `subdivide`, and the cuts that subdivide (`contour`, `slice`, `clip`,
+  `threshold`), take meshes of several families of one dimension (hexahedra,
+  wedges and tetrahedra, as MFEM's mixed Fichera corner): each family is refined
+  alone and the parts joined at the lattice points they share. Their cuts'
+  crossings are placed linearly on the sub-cells (exact crossings stay a
+  one-family feature). They were refused.
+- `vtk_to_dataset(dtype=None)` with a default device without `f64` (Metal)
+  reads floating-point arrays as `f32`, which such a device's arrays take,
+  where it kept VTK's doubles there before.
+- Reorganize the Visualization Guide around a gradual data-model explanation
+  and complete workflows, with representation chapters for point clouds,
+  pieces, AMR and octrees, and optional advanced theory, layouts and references.
+  Preserve runnable examples and existing page addresses.
+  Open the model with an overview relating mesh and particle representations
+  to FE/DG, FV, SPH and planned native FD support.
+- The CUDA, HIP, OpenCL and Metal code generators find the types of the
+  variables an `if` declares in one walk of its branches. Kernels with many
+  nested branches, which inlined device functions produce, generated their
+  source in time that grew with the number of variables times the branches'
+  size at every level: a spread of tack-vis algorithms' 105 kernels now
+  generate in a third of the time, to the same source.
+- A polyhedron with no kernel (tangled or inside out, a face whose
+  fan folds, no volume) no longer makes `CellLocator`, and with it `probe` and
+  advection, refuse the whole mesh: it holds no points, with a warning. A point
+  inside it is found in a neighbour it overlaps, or nowhere; a particle reaching
+  it stops. The AhmedML volume has 12, wall cells at the nose's corners.
+- `contour` and `slice` make a crossing that lies within half an ulp of a
+  point (relative to its edge's largest coordinate) that point, as they did
+  when the point's value is the level, so every edge's crossing there is one
+  point. A plane a hair from mesh points, such as a symmetry plane's points
+  at y = 1e-45, had put several points at one position, and on pieces with
+  ghost cells `generate_global_ids` of such slices failed. Slivers whose
+  points all lie that close to one point have no area and are dropped:
+  Viskores' wedge gyroid gives 49 triangles, where Viskores gives 52.
+- `threshold` and `threshold_points` keep a value exactly when it lies in
+  `[lower, upper]` as given: on an f32 field the bounds are rounded inward to
+  f32, since the nearest f32 of a bound may lie just outside it (f32(-0.1) is
+  -0.10000000149), which kept values VTK, comparing in double, leaves out (one
+  cell of the AhmedML mesh's 18,027,253). f64 and integer fields are unchanged.
+- A `PolygonalTopology` matches its edges when something first needs them
+  (`faces()`, the facet arrays, `num_faces`), not when it is made, and refuses
+  an edge of three or more polygons, or an inconsistent winding, there. Its
+  polygons work without the matching: areas, centres, integrals, probes,
+  quality and writing take any loops.
+- Advection tries the polyhedron a particle was last found in before the
+  bins, as it tries solid cells with a reference element: taken where one of
+  its sub-tetrahedra holds the point well inside, so the paths are the same
+  bit for bit. On the AhmedML mesh's 21.5M polyhedra, 2,000 streamlines take
+  0.66 s on the CPU (0.76 before) and 3.0 s on Metal (6.0).
+- The documentation site is rewritten and reorganized by Tack's four layers,
+  built bottom-up: Core (GPU computing in Python), Communication (distributed
+  parallelism), Data (the data model) and Visualization (analysis and
+  algorithms), after a front page (What Tack is, use cases, install). Each
+  layer opens with a start page and builds without depending on the layers
+  above. The reference is gathered by layer with a new glossary that gives VTK,
+  ParaView and Viskores counterparts, and the design notes form an addendum.
+  Every example on the new pages runs in the docs check. The writing kit
+  (style guide, term list, page checker) is in `docs/_writing/`.
+- The documentation site's navigation has five tabs, as NumPy's has a few: Get
+  started (what Tack is, use cases, install), Guide (Core, Communication, Data
+  and Visualization as groups of its sidebar), Reference, Developer's guide and
+  Design notes. Pages have breadcrumbs and previous and next links; the header is
+  plain, the headings dark, the fonts the system's.
+- The documentation's first pages, after an editorial review: the home page
+  starts with four paths (write GPU code, analyze a dataset, connect a
+  simulation's data, scale across devices or ranks) and is a third shorter;
+  the Data, Communication and Visualization introductions are short, their
+  longer examples left to the chapters that teach them; Visualization starts
+  with a Tack-only example; pages open in their own words, not a set formula
+  (the style guide's first rule, which `check_page.py` now checks); and the
+  Visualization pages show their results, with a new picture of contour, clip
+  and threshold of one ball (`docs/gallery/extract.py`) and the gallery's
+  images beside probing, streamlines, pathlines, pieces and higher-order cuts.
+- A topology's cell locator serves a geometry of the same positions: where it
+  does not serve a dataset, `probe` and advection compare the positions on the
+  device and, if they are equal, keep its bins (the search made again from the
+  new positions). `Pathlines`, `Streaklines` and `Advection` keep a copy of the
+  previous step, whose positions are the step's, and built every mesh's
+  locator twice: half of a step's time on the dam break's adaptive meshes
+  (1.36 s to about 0.6 for 100 particles over 30 meshes). A simulation that
+  hands over new arrays of unchanged positions each step no longer rebuilds
+  them either.
+- The repository moved to Kitware's GitHub organization: it is
+  `https://github.com/Kitware/tack`, and the documentation is at
+  `https://kitware.github.io/tack/`. The packages' metadata, the READMEs and
+  the documentation link there; GitHub redirects the repository's old
+  address, but not the documentation's.
+- Tack's VTK algorithms (`tack.interop.vtk.algorithms`) keep one Tack dataset
+  per VTK dataset, by its address, modification time and time step, dropped
+  when the VTK dataset is deleted. Filters that read one input, or one filter
+  run again after a parameter changed, share it and what it derives from its
+  topology (locators, faces, point links), which every run rebuilt before: a
+  second `Streamlines` on 2.6M tetrahedra took 13-86 ms against 380-540. A
+  field filter's (`Gradients`, `Elevation`, `CellQuality`) output keeps its
+  input's topology, so the filter after it does too.
+- The VTK interop shares GPU memory with any VTK that holds device arrays, not
+  only one built with Viskores: VTK's `vtkDeviceDataArray` (CUDA and Level Zero,
+  needing only the driver) serves as well. Nothing in the interop changed; its
+  device tests now run wherever such a VTK is found.
+- `tack.interop.vtk.init_level_zero()` works with a VTK that has its own Level
+  Zero context, without Viskores; its error message and docs no longer say
+  Viskores on Kokkos' SYCL backend is required.
+- Handing an unstructured grid between VTK and Tack costs less:
+  `vtk_to_dataset` finds the cell types a grid holds without sorting them
+  (`np.unique` was 8 ms for 1.3M cells), and `dataset_to_vtk` sets the cells
+  without VTK's scan of every type for a polyhedron (4 ms). Together most of
+  what a GPU pipeline spent between its filters.
+- Every source file opens with an SPDX copyright and license header, as in
+  ParaView and VTK (`tools/spdx_headers.py`, checked in CI's lint job).
+  `tack.dataset`'s clip case tables now credit their authors: they are VisIt's
+  (Lawrence Livermore National Security, BSD-3-Clause), which VTK keeps in
+  `vtkTableBasedClipCases.h` and Viskores copied, not Viskores' own.
+- CUDA writes the multiply-add contractions the language contract permits as
+  explicit fused multiply-adds and compiles with `--fmad=false`. NVRTC's own
+  fusion depended on the code around an expression, so two kernels inlining
+  the same function could differ in the last bit (streamlines with and without
+  the locator's previous-cell try, on curved wedges).
+- Template methods take only the synthetic parameters (a template's arrays and
+  runtime scalars) they read, themselves or through the methods they call. Every
+  method took its whole tree's, and each inlined call copied them all: a view
+  holding other views carried theirs into every call.
+- A template's methods are resolved when the kernel reaches them, not all of
+  them for every kernel. A method the kernel never calls costs nothing and is
+  not required to resolve.
+- `world_gradient` and `world_jet` ask the field's view, whose default
+  (on every field view whose basis gives the derivatives) differentiates its basis as
+  before. A space that computes its values can give its own.
+- The temporal VTK algorithms (`RunningStatistics`, `TimeDerivative`,
+  `Advection`, `Pathlines`, `Streaklines`) take a `vtkMultiBlockDataSet` or a
+  `vtkPartitionedDataSetCollection`, which they refused, in both modes: each
+  partitioned dataset and each block that is one dataset has a Tack filter of its
+  own, and the output is a tree of the same shape, at the step's time (the
+  tree's, or its datasets'). The OpenFOAM, IOSS and CGNS readers give trees.
+- `integrate` takes a mapping of names to fields (names or `Field`s), each
+  integral under its name, as `statistics` and `entropy` take a `Field`.
+- Filters carry a field's given gradient with it, so `gradients` of a filter's
+  output reads the gradient the field was given, not one from its basis.
+  A field whose gradient a filter cannot carry is left out with it.
+- `cell_geometry`, `face_geometry` and `surface_normals` keep what they compute
+  with the mesh: computed once a mesh, shared by every dataset on the same
+  geometry, and made again when the geometry changes (another geometry, or
+  positions Tack has written). `extract_surface` of the same mesh gives the same
+  surface geometry, so the surface's normals are computed once over many steps
+  that change only fields.
+- CI's wheel job also builds tack-core's sdist, checks both with `twine check`,
+  and installs tack-core alone, from the wheel and from the sdist
+  (`tools/check_core_install.py`). Asking for `tack.dataset` without tack-vis
+  names the command that installs it from the repository.
+- tack-core is on PyPI: the install docs, the READMEs (tack-core's is its PyPI
+  page) and the messages for a missing backend give `pip install
+  "tack-core[...]"` instead of an install from a clone, and tack-vis's install
+  from the repository at the release tag (`docs/install.md`). A clone's `uv
+  sync` stays, for working on Tack.
+
+### Fixed
+
+- `contour`, `slice` and `clip` interpolate each crossing from its edge's end
+  first by position (x, then y, then z; the lower id only between coincident
+  points), not from its lower point id. Ids are a piece's own, so two pieces
+  holding an edge could interpolate its crossing from opposite ends: with an
+  f32 field the copies differed in their last bits (up to 4e-8 on a wavelet),
+  and `merge_pieces` of ghosted unstructured pieces' isosurfaces failed
+  ("marked duplicates but no piece holds them unmarked") for want of a
+  tolerance. Every piece now computes a shared crossing, and the values
+  carried there, to the same bits, from the same end ghost marks already
+  give it its owner by; within one mesh, as before, every cell sharing an
+  edge agrees. Output points and their order are unchanged; their last bits
+  may differ from before.
+- Gradients in f32 on thin cells. A cell's Jacobian summed its corners'
+  absolute positions, and its field's parametric derivative its values: on a
+  cell 250 times longer than thick, near coordinates of 1 and a pressure of
+  1e5, those sums lost the short edge and the small differences to rounding.
+  The ONERA M6's boundary-layer wedges' f32 pressure gradients were off by
+  more than 0.1% in 6,569,170 cells (14%), by more than 100% in 380, the worst
+  93 times. Both are now formed from differences from the first corner and
+  value (the shapes' gradients sum to zero, so the result is the same),
+  exact in f32: 31 cells off by more than 0.1%, the worst 0.32%, as in f64
+  (1 cell, 0.33%), at the same cost; on Metal, which has no f64, 26 cells,
+  0.37%. Cell quality's Jacobian measures and order-2 geometry follow the
+  same rule; locating points already did.
+- Points in curved cells are located in the cells as they are. The cell
+  locator bounded and inverted every cell by its corners, whatever the
+  geometry's order, so a point where a curved cell bulges past its corners
+  (at order 2 as well) was missed or found in the wrong cell. A cell is now
+  bounded by the box of its Bernstein control points, which hold it, and
+  inverted by Newton's method on its own map.
+- Filters that keep whole cells (`extract_cells`, `threshold`, `split`,
+  `remove_ghosts`, and any filter written with `carry` and a `Same` or
+  `Take` cell map) keep an `H1` field above order 1, and a curved
+  geometry, at its order and nodes. They carried the corner values only, so
+  a filter's piece of a curved or high-order mesh came out straight and
+  linear. Each output cell's nodes are its source cell's, to the bit.
+- `CellLocator.cell_bins()`, `leaves()` and `cell_neighbors()` build their
+  tables on the dataset's device. Called directly on a dataset on a GPU (not
+  through `find`, `probe` or advection, which set the device), they allocated
+  on the default device and their first kernel refused arrays on two devices.
+- An RK45 particle at a wall the flow turns back from ends there
+  (`SPATIAL_BOUNDS`), as `vtkStreamTracer`'s RK45 ends it out of its domain.
+  Its stage points swung past the wall at every step size, or its stages'
+  directions cancelled, so each step's bisection pushed it out by about an
+  ulp, still inside, and it crawled until its steps ran out: 86 of 20,000
+  aneurysm paths, on every device, and on a GPU those few threads set every
+  launch's length (20,000 seeds took 6.4 s on CUDA, 14 s on HIP and 44 s on
+  Level Zero, against 1.4-2.9 s on the CPU). A push out that moves the
+  particle less than `min_step` now ends it; on the aneurysm 2 paths still
+  run to the step limit, and the CPU run takes 1.4 s instead of 2.3 s. Euler
+  and RK4 are unchanged.
+- `interpolate` places a shared node on a quad face, and an order-3 or higher
+  node on an edge, in a frame the entity's corners' positions fix (an edge from
+  its first point by position, a face from its first corner toward the first
+  of that corner's neighbours), not in its stored point order, which follows a
+  piece's point ids. Pieces holding a face computed its nodes from different
+  corners, so a curved geometry or field interpolated on each piece differed
+  from the whole's in the last bits there (up to 2e-7 in f32). Values may
+  differ from before in their last bits.
+- A filter carrying an `L2` field of a tensor basis kept its order but not its
+  nodes, so a Gauss-Legendre field came out labelled Gauss-Lobatto, another
+  basis, and read wrongly.
+- `interpolate` on a curved geometry numbered otherwise than the target space
+  (by a table) placed nodes at the wrong positions.
+- Order-2 Bezier cells read from VTK took the order-2 Lagrange view's node
+  numbering for a Bernstein space's.
+- An order-2 `H1` field on a geometry curved to order 3 or more had its edge and
+  face nodes at the mean of their corners, off the curved cells; they are now
+  on the geometry's traces. Node views of a curved geometry and an `L2` field of
+  another order no longer fail to build (both defined `ORDER`).
+- `contour` with `subdivision=` on polyhedra, polygons or polylines sent them to
+  the sub-cell path, which failed; they are cut as they are, as `clip` and
+  `threshold` cut them.
+- `as_polygons` of a polygonal dataset failed; it comes back as it is.
+- `ghost_cells` and `merge_pieces` made a curved geometry straight with no word
+  (they move positions at the points); they refuse it.
+- `cell_quality` scores a degenerate cell (an edge of no length, or no area or
+  volume) 0 in its scaled Jacobian and Jacobian ratio, as Verdict does for
+  triangles, quads and tetrahedra; it gave the largest float, of either sign.
+- `cell_quality` measures a polygonal topology's triangles and quads as those
+  shapes, not by fans from their centers (an equilateral triangle scored 0.577
+  beside a pentagon), and a polygon's fan triangles' condition number is
+  Verdict's triangle's; it was twice that.
+- `contour` and `slice` of a 2D mesh match its cells' sides by their points
+  instead of through the topology's faces, so a surface with an edge of three
+  or more cells (PyVista's action figure, room and sextant) gets its lines,
+  meeting there, where they refused the whole mesh. The topology keeps the
+  matched sides for the next call.
+- `contour` of a 2D mesh finds each side's crossings from its two points, not
+  from the side's first cell, so a crossing every line needs is always made.
+- `face_geometry`, `upwind_flux`, `net_flux`, `divergence`, `perot` and
+  `surface_normals` take a surface with lines among its polygons (EnSight's
+  and VTK's surfaces carry them), the lines having no edges of the
+  surface's: zero flux and a zero normal. `net_flux`, `divergence` and
+  `perot` of a mesh of vertices are zero. Both failed inside the kernels
+  (`no @tack.func method 'side_position'`, `'num_faces'`).
+- `outliers`' docstring no longer says its statistical test is VTK's: it marks
+  points far above the mean distance only, as PCL; `vtkStatisticalOutlierRemoval`
+  also removes those far below it.
+- `probe` rounds an integer field evaluated in a cell to the nearest integer,
+  halves away from zero, as VTK's probe does; it truncated (a `u8` field of 0
+  and 1 probed three quarters of the way came out 0).
+- `shrink` keeps integer point fields, each cell's corners copied as they are;
+  it failed on them. `project` from order-1 `H1` into order-1 `L2`, a copy,
+  takes integers.
+- `dataset_to_vtk` makes normals VTK's active normals, which its renderers and
+  filters read: a 3-vector point field named `Normals` or `normals`, and a
+  3-vector cell field named `Normals`, `Normals (cells)` or `cell_normals`. A
+  surface's normals carried through a Tack filter (a clip of a VTK surface
+  with normals) came back as a plain array, and VTK drew the surface flat.
+- `vtk_to_dataset` reads a `vtkBitArray` as one u8 value (0 or 1) per point or
+  cell; it came as its packed bytes, eight values to one, and conversion
+  failed (`kitchen.vtk`'s `hpor`).
+- `vtk_to_dataset` reads hexahedra with corners repeated as finite-element
+  files write other shapes (Tecplot's bricks, degenerate Exodus and Patran
+  hexahedra) as those shapes: wedges, pyramids and tetrahedra. As hexahedra,
+  each one's collapsed face, an edge, was claimed by every cell around it, and
+  every face-based algorithm refused the mesh.
+- `vtk_to_dataset` reads a polydata's poly vertices (a vert cell of several
+  points, as `vtkTableToPolyData` and `vtkParticleReader` make) as one vertex
+  per point, each taking the poly vertex's cell data, as strips become
+  triangles; they were refused. A VTK cell type Tack has no shape for is
+  refused as such, naming the higher-order cells that convert only when the
+  type is one.
+- `vtk_to_dataset` refuses VTK cells it reads neither as shapes nor as
+  higher-order spaces (biquadratic and triquadratic cells, quadratic
+  pyramids), naming them by VTK's class names; they came across as cells no
+  algorithm took, every one failing with "are not linear shapes".
+- `warp` takes a direction or `scale_by` given as values on points when the
+  geometry is order-1 `H1`, as `surface_normals` gives its normals; it
+  refused them as "not in the geometry's space".
+- `cell_geometry` of a curved geometry (`H1` above order 1, a curved `L2` one)
+  measured each cell by its corners; it measures it by quadrature through its
+  map (a sphere's area was 3-6% short).
+- `jump` of a field of order 2 or more took each side's value from the face's
+  corner values (`traces`) and their linear mean; it evaluates each side's own
+  basis at the face's center (DG jumps against MFEM's to 1e-16).
+- `mfem_to_dataset` of a 2D curved mesh refused its two-component nodes; they
+  get z = 0.
+- An `L2` geometry above order 1 (a mesh displaced by a DG field, a periodic
+  mesh of order 2) was read as order-1 corners, each cell's first values, so
+  probes, centres and everything else were wrong. On tensor shapes it is now a
+  curved geometry (`views._L2TensorGeometry`, either layout); on simplices and
+  wedges it is refused.
+- `subdivide` (and the cuts that subdivide) of an `L2` geometry shared lattice
+  points through the topology, so on a periodic mesh, whose seam's cells share
+  points but sit apart, sub-cells stretched across the mesh; each cell's lattice
+  points are now its own.
+- `contour` of a high-order field on a mesh subdivision does not take (cells of
+  two families, as MFEM's mixed Fichera corner; pyramids) is refused with that
+  reason; the message spoke of corner values.
+- `vtk_to_dataset` of a grid of VTK cell types Tack has no shape for (the
+  biquadratic quad, among others) built a topology it could not read, with no
+  word; they are read (above) or refused, naming the types. Pyramids above
+  order 1 and quadratic polygons are refused.
+- A serendipity field of integers truncated its face centres (computed in its
+  own type); they are computed in floating point, as its basis is evaluated.
+- A curved cell is inverted to rounding: two Newton steps past VTK's stopping
+  rule (`CURVED_NEWTON_POLISH`). Probes of MFEM's curved meshes agreed with MFEM
+  to 3e-9; now to 1e-15.
+- `extract_edges(..., subdivision=)` placed a curved edge's points at f32
+  fractions of it (`(k + 0.0) / level`), about 1e-8 off the curve in f64.
+- Filters no longer store an image's or a rectilinear grid's positions, or
+  an implicit field's values, to read them once: `point_elevation`,
+  `implicit_values` (so `slice`, `clip`, `extract_geometry` and
+  `extract_points` by an implicit function), `carry` of taken and
+  interpolated points (`threshold`, `clip`, `extract_cells`, `mask`, ...),
+  `warp`, `transform`, `cylindrical`/`spherical`, `glyphs`, `tubes`,
+  `feature_edges`, `composite`, the 1D and 2D contours, clipping polyhedra,
+  advection and `voxelize` pass them to their kernels as they are. A 256³
+  image's positions are 200 MB; `warp` without `scale_by` also no longer
+  stores an array of ones. On that image `point_elevation`, `implicit_values`
+  and `warp` run 2-5 times faster.
+- Reading polyhedra from VTK, and any cells with
+  `vtk_to_dataset(..., polyhedral=True)`, is about ten times faster:
+  `PolyhedralTopology.from_cell_faces` matches the faces cells share in
+  whole-array steps instead of a Python loop over them, and the reader takes a
+  cell type's faces from its class once rather than calling `GetCell` per cell
+  (512,000 polyhedra: 7.2 s to 0.7 s). The topology is the same, array for array.
+- Triangle strips read about four times faster: their cell data is copied to
+  the triangles by a NumPy gather per array, not a `vtkIdList` filled one id
+  at a time (2M triangles: 319 ms to 74 ms).
+- `generate_global_ids` over a `PartitionedDataSet` with a polyhedral piece:
+  it read faces' `rows`, which a polyhedral topology's faces (of any size) do
+  not have. It now takes their boundary points from the face lists.
+- Reading hexahedra no longer sorts every hexahedron's corners to look for
+  collapsed ones (Tecplot's bricks, degenerate Exodus hexahedra): only those
+  with a collapsed edge are sorted, about 1.2 s and 2.6 GB less on 21M
+  hexahedra.
+- `L2.indices()` and `L2.blocks(values)` refuse cells holding different numbers
+  of values (a mixed mesh, an order per cell), naming `space.offsets`. They cut
+  the values into rows of the average size, so a tetrahedron and a hexahedron
+  at order 1 read as two cells of 6 values each, raising only when the total did
+  not divide evenly.
+- Reading as polyhedra (`polyhedral=True`) is about four times faster again:
+  triangles and quads are matched by their sorted points packed into two
+  64-bit keys and Tack's parallel radix sort, where `np.lexsort` took 68 s on
+  128M quads, and their face lists are built by columns, a few million cells at
+  a time, with 32-bit point ids where they fit. 21M hexahedra, 67K wedges and
+  508K polyhedra: 27 s and 19 GB, with `orient=True` for its wedges, which also
+  no longer falls back to the cell-by-cell walk when the shaped cells were what
+  disagreed.
+- A `vtkCharArray` comes across as `u8` where the platform's `char` is unsigned (Linux on Arm) and as `i8` elsewhere; it was always read as `i8`, which turned values above 127 negative on Arm.
+- `generate_global_ids` matches every point, not only boundary points, when
+  pieces have ghost cells but no point marks.
+- Lines cut from surfaces interpolate each crossing from its side's end first
+  by position, not from its lower point id, so pieces sharing a side compute
+  it to the same bits.
+- Streamlines, advection and probes over pieces bounded each piece by its
+  positions' box taken on the host on every call: a second of each call over
+  the AhmedML mesh's 21M-cell piece, half the split reading's streamline time.
+  The box is now the piece's locator's, found once when the locator is made;
+  the split reading's 2,000 streamlines take 0.75 s, as the whole reading's
+  do, where they took 1.71.
+- Point gradients (`gradients(..., at="points")`) were NaN at a corner where a
+  cell's Jacobian is singular, as where two of a hexahedron's faces meet flat
+  (17 points of the AhmedML mesh). Such a cell has no gradient there -- it
+  grows without bound toward the corner -- and is now left out of that point's
+  average, the others' mean taken; VTK leaves its inverse Jacobian unset there,
+  and Viskores counts the cell but adds nothing.
+- A CPU device without f64 (the tests' stand-in for Metal) loaded kernels a
+  CPU with f64 had stored in the disk cache, and so ran an f64 kernel Metal
+  refuses; its cache target now says it has no f64. Point gradients at
+  singular corners are also run on it in the tests, which is where #268's f64
+  cast would have been caught.
+- Filters over pieces whose points are marked copies stalled now and then: the
+  check whether any mark has a bit (`ghosts._has`, on every `carry`) raised one
+  atomic flag for every marked element, so the CPU kept it serial (0.14 s over
+  the AhmedML mesh's 22.8M points) and its rechecks fanned it out at 1-1.2 s.
+  It is now a flag per chunk of the marks, without atomics: a slice of the
+  polyhedra piece takes 0.012 s every call, where it took 0.15 s with spikes
+  of 1.2.
+- `contour` of a polyhedral mesh raised where the iso-surface met an edge
+  three or more times: a point within half an ulp of the level is a vertex
+  on some of its edges and not others, so several faces trace one iso-edge.
+  The AhmedML mesh's Q = 1, 2 and 5 contours (2.0M, 1.5M and 0.8M polygons)
+  are made now; only their faces are refused.
+- Advection stopped a particle at zero velocity wherever its speed was below
+  3.5e-4 in the data's unit (a squared speed at the float's machine epsilon),
+  so every streamline of the SciVis 2021 mantle (1e-9 m/s) ended at its seed.
+  Zero velocity is now a squared speed at or below 1e-37; slower flows stop by
+  `terminal_speed`, as vtkStreamTracer's do. The mantle's 500 streamlines are
+  VTK's (300,500 points, lengths within 1.3e-5).
+- A step leaving the mesh is bisected to the boundary, and the bisection's
+  bracket was absolute (ten machine epsilons): on long steps in f32 (an ulp of
+  50 is 3.8e-6) it never got that small, and the particle bisected forever.
+  The bisection is now bounded at 64 halvings.
+- AMR hierarchies of thousands of boxes took minutes or more: making an
+  `AMRDataSet` compared every box with every other in Python, and
+  `ghost_cells` and `average_down` built their sources box by box and filled
+  through a plan with a pair for every two boxes that touch (AMR-Wind's 6,436
+  boxes: 326,480 launches a fill). The marks are computed a level at a time,
+  boxes that meet are found by a sort and sweep, the sources by kernels over a
+  level's boxes at once, and a fill runs once per device's boxes. On AMR-Wind's
+  levels 0 and 1 (6,436 boxes, CPU, VTK master), making the dataset from VTK's
+  went from 129 s to 3.2, `ghost_cells` from more than 40 minutes to 7.6 s,
+  and `average_down` from not finishing to 2.9 s, with every value the same to
+  the bit; all five levels (15,598 boxes, 183M cells) take 8.2, 30 and 11 s.
+- `vtk_to_dataset` of a `vtkOverlappingAMR` gives every box the hierarchy's
+  origin, not one chosen from the box's own bounds, and places each box as it
+  converts it.
+- `average_down` of an image box weighs its cells by the product of its spacing,
+  every cell alike, not by each cell's measure from its corners, which could
+  differ in the last bits.
+- `ghost_cells` of an `AMRDataSet` looks for sources only in each grown box's
+  shell (its ghost cells, and its own points on its boundary), not in every
+  cell and point it holds, places each box's values on the device, and looks
+  each box's device up once: on AMR-Wind's levels 0 and 1 (6,436 boxes) it
+  went from 7.6 s to 3.6, with every value the same to the bit, and on all
+  five levels (15,598 boxes, 183M cells) it takes 20 s, `average_down` 9.
+- A filter's output from pieces without ghost cells (`split` without ghost
+  layers, the split reading of shaped cells and polyhedra) refused every
+  reduction, though only the points it makes on shared edges and faces have no
+  owner: each cell it made from one input cell keeps that cell's. The loss is now
+  recorded per kind, so `integrate` (a contour's area) and statistics of cell
+  fields work on such outputs, and point reductions still refuse.
+  `extract_surface`'s cells, faces the pieces share, lose their marks too.
+  Setting a dataset's `ghosts` to `None` clears the record, as other marks did.
+- `integrate` and `cell_geometry` measure a non-planar polygon as its fan of
+  triangles from its points' mean, Tack's model of a polygon and the area VTK
+  reports, and a quad as its bilinear patch (by 4 x 4 Gauss points, within
+  rounding unless it is twisted far out of plane), not either as its
+  projection onto its Newell normal, which is smaller. Tack's contours of
+  hexahedra are polygons, and a wrinkled one measured 1% small (the dam
+  break's free surface; the Ford DrivAer's wake 7.5e-4). Both are signed by
+  the normal, so a planar polygon whose mean lies outside it, or a planar quad
+  that is not convex, still measures exactly. VTK measures a quad as its
+  projection.
+- A particle whose step leaves the mesh is pushed just outside it (an Euler
+  step from the last point inside by the bisection's bracket, grown until no
+  cell holds it), not by the distance to the boundary again, which Viskores'
+  `SmallStep` does and Tack did, counting the distance once in the particle's
+  time and path length. On one mesh it lengthened only a path's last segment;
+  between pieces without ghost cells the path went on from there: on the Ford
+  DrivAer's split pieces 59 of 200 streamlines ran past `max_length` (by up to
+  0.31 m over 23 hand-offs) and one was pushed out of the mesh across a thin
+  layer, 0.48 m into its 13.84.
+- RK45's end at a wall, a push out that moves the particle less than
+  `min_step`, measured the push after it was taken (always 0), so every RK45
+  push out that stayed in the mesh ended the particle; it measures the move.
+- Over pieces without ghost cells, a particle pushed out of one piece into a
+  sliver no piece holds -- pieces whose shared faces are not one surface, a
+  hexahedron's bilinear face against a polyhedron's fanned one in a
+  `polyhedral="split"` reading -- goes on from where the push would have ended
+  going the way to the boundary again, if a piece holds that, with the move in
+  its time, length and stretch; it stopped there, outside.
+- `dataset_to_vtk(..., copy=False)` of a dataset made by
+  `vtk_to_dataset(..., copy=False)` from GPU arrays hands VTK back the arrays
+  it shared, which DLPack cannot (they are read-only to Tack): a filter that
+  keeps its input's points, as `Probe` does, failed.
+- `vtk_to_dataset(..., copy=False)` makes a dataset from a host grid on the CPU
+  whatever the default device: with a GPU the default (as
+  `tack.interop.vtk.init_level_zero()` makes Level Zero), what it copied beside
+  the shared arrays -- implicit cell types and offsets, converted values -- was
+  made on the GPU, so filters gave empty outputs or refused arrays on two devices.
+- A VTK algorithm whose filter raised kept the exception with its traceback,
+  whose frames held the algorithm and VTK's pipeline information in a cycle;
+  Python's collector crashed freeing it. The exception is kept without its
+  traceback, printed as VTK printed it.
+- A filter over pieces (`GenerateGlobalIds`, `GhostCells`, `MergePieces`) on a
+  multiblock's `vtkMultiPieceDataSet` block ran on each piece alone, and gave
+  empty pieces.
+- `MergePieces` over MPI ranks gave the ranks other than the root nothing to
+  convert, and failed there; they get an empty dataset of the output's type.
+- Python crashed in its garbage collector when it freed, in a reference cycle (a
+  traceback's frames, say), a VTK dataset one of Tack's VTK algorithms had read: the
+  `DeleteEvent` observer that dropped the dataset's cache entry, referenced only by
+  the dataset, was cleared as garbage before the deletion called it (a VTK bug, in
+  9.7.1 and master). The cache entry is now an attribute of the dataset's Python
+  wrapper, which VTK keeps while the dataset lives and frees with it: no observer.
+  An entry is converted again when the dataset's modification time or time step
+  changes; after changing a dataset in place, call `Modified()`, as VTK's own
+  filters need.
+- A `vtkOverlappingAMR` given to a VTK algorithm gave an empty hierarchy, with no
+  error: VTK makes a hierarchy a partitioned collection, which they filtered as a
+  tree into an output of the hierarchy's type that could not hold it.
+- `vtk_to_dataset` of a `vtkOverlappingAMR` spread over MPI ranks marked each
+  rank's boxes as if its own were the whole hierarchy; it now converts in VTK's
+  world unless given one.
+- `Advection` (and `Pathlines`, `Streaklines`) over pieces on MPI ranks waited
+  forever where a rank had no particles, released particles at other steps, or
+  saw its particles stop at another substep: the probes are collective, and a
+  rank skipped them. Every rank now takes part in each.
+- The VTK algorithms that add fields (`Elevation`, `Gradients`, `Project`, ... and
+  `RunningStatistics`, `TimeDerivative`) on VTK's higher-order cells wrote Tack's
+  values straight into VTK's point data: an order-2 field's in Tack's node order,
+  not VTK's (`Elevation` came out scrambled, and its `Gradients` wrong), and values
+  on Tack's points, the corners, for every VTK point, edge middles included (a
+  1193-point grid got an array of 1193 tuples of 1227 components). Each VTK point
+  now takes its node's value: the field put into the space the import made
+  (`project`, exact for an `H1` field of that order or below and for values on the
+  corners), its nodes matched to VTK's points as the import matched them. An
+  integer field on the points is refused there, having no value at an edge's
+  middle. Found running VTK's `quadraticQuadDeriv.py` on Tack.
+- The VTK algorithms' outputs had no active attributes: Tack keeps no roles, so the
+  arrays it carried came back plain, and mappers colored by nothing, glyphs and
+  lighting found no vectors or normals (VTK's tests rendered white). An output now
+  keeps its input's active scalars, vectors, normals, texture coordinates and
+  tensors where it carries arrays of those names (`Probe` its source's), as VTK's
+  filters pass them; `Elevation` and `ImplicitValues` make their array the active
+  scalars, `SurfaceNormals`, `PointNormals` and `Tubes` theirs the active normals
+  (a tube took the lines' carried `Normals` before, and was lit wrongly). Found
+  running VTK's Python tests on Tack.
+- `triangulate` cut a polygon into a fan from its first corner, which covers a
+  concave polygon twice in part and leaves part uncovered (a U-shaped polygon of
+  area 6 gave triangles of area 9). It now cuts ears in the polygon's plane, as
+  VTK's `vtkTriangleFilter`: `n - 2` triangles that cover the polygon once, each
+  wound as it is. Found running VTK's Python tests on Tack (the concave polygons of
+  `vtkDiscreteFlyingEdges2D` and `vtkImageToPolyDataFilter`).
+- The VTK algorithm `Transform` carried the input's vectors and normals as they
+  were, so after a rotation they pointed the old way (and normals lit a moved
+  surface wrongly). It now transforms the input's active vectors and normals, on
+  points and cells, as VTK's `vtkTransformFilter` does, unless `vectors` or
+  `normals` say otherwise. Found running VTK's Python tests on Tack.
+- Slicing or contouring serendipity cells (quad8, hex20, wedge15) that carry a
+  64-bit integer point field failed: the field's full values asked a device for
+  what a backend has. Found running VTK's `cutter.py` on Tack (`cuttertest.vtu`'s
+  node numbers).
+- `extract_extent` of a flat curvilinear grid refused VTK's three-axis extent and
+  rates (VTK always writes three; a grid's flat axis is the one whose pair is
+  `(0, 0)`). Found running VTK's `NetCDFCF2DBounds.py` on Tack.
+- A template method may pass one template it holds to a method of another
+  (`self.values.scaled(self.mesh, i)`): the callee is resolved when that call is
+  reached. It raised a `KeyError` for the callee's resolved name.
+- `vtk_to_dataset` marks a cell `HIDDENCELL` where one of its points is
+  `HIDDENPOINT`: VTK sees a cell only where it and all its points are visible (a
+  structured grid blanked by points), and Tack's filters, which leave out hidden
+  cells, contoured and cut through blanked points. The point marks are kept.
+- The VTK algorithm `ConnectedComponents` refused its own output on `vtkPolyData`
+  (it gave an unstructured grid where it promised its input's type): its arrays go
+  onto a copy of the input, as VTK's `vtkConnectivityFilter` keeps it.
+- `project` of a polygon (polyhedron, polyline) with no points gave `inf`, having
+  read past the cell: it is `NaN`, the cell having no value. These three found
+  running VTK's Python tests on Tack.
+- `vtk_to_dataset` of a grid of VTK's higher-order cells keeps a point array and a
+  cell array of one name as two fields, as on linear cells; the cell array
+  replaced the point array (`CylinderQuadratic.vtk`'s `velocity` and `pressure`).
+  Found by `test_vtk_higher_order.py` with `TACK_VTK_DATA`, which CI does not
+  set; it failed since fields by name and space (0.7). That test also compared
+  Tack's measure of a bent quad, a fan from its mean since 0.7, with VTK's two
+  triangles; it now measures both surfaces with `vtkCellSizeFilter`.
+- A VTK algorithm given a tree with a partitioned dataset of no partitions on
+  any rank (the node and side sets an IOSS reader leaves unread) gives it an
+  empty one without running the filter. `Streamlines` and `Advect` failed on
+  them ("a rank with no pieces has no piece to start its seeds from").
+- Box by box over an AMR hierarchy, the VTK algorithms that give `vtkPolyData`
+  (`SlicePlane`, `Contour`, ...) give it for each box too, where they gave
+  `vtkUnstructuredGrid`.
+- `dataset_to_vtk` gives an image, rectilinear or structured grid that is part of
+  a larger one (`StructuredTopology.offset`, as `split` makes it) its extent
+  there, its points where they were. Every piece's extent started at 0, so
+  pieces handed to VTK did not tile their whole, and `GhostCells` refused them.
+- `MergePieces` of polygonal pieces (a contour's, a surface's) gives `vtkPolyData`;
+  since #353 it declared a `vtkPolyData` output, made an unstructured grid and
+  failed, which broke example 48. Examples 47 and 49 read and wrote the
+  polydata outputs as unstructured grids, and failed too.
+- Over MPI, `tack.communication.sort_by_key` and the matching behind
+  `generate_global_ids`, `ghost_cells` and `merge_pieces` hung when one rank held
+  every block and the others none: that rank took a shortcut without messages
+  and the others waited in an exchange. Every rank now takes the same path.
+- Over MPI, the algorithms over pieces take ranks that hold no pieces, as a reader
+  that gives some ranks nothing makes them. Each rank must make the same calls
+  that communicate, so a rank must not decide from its own pieces alone what the
+  others decide from theirs:
+  - `probe` of a `PartitionedDataSet` or an AMR hierarchy, `streamlines` and
+    `advect` over pieces, `voxelize` of pieces or a hierarchy, and `Advection`
+    (and the path filters) over pieces refused or failed on a rank without
+    pieces ("needs pieces on this rank to start from", "a rank with no pieces has
+    no piece to start its seeds from"), leaving the others waiting. Such a rank
+    now takes part through a piece of nothing (`_stand_in`): its points and seeds
+    go to the pieces that hold them, and the answers come back.
+  - `update_ghosts`, `extract_surface` of pieces, AMR `ghost_cells` and
+    `average_down`, `integrate` over pieces, and the VTK `Statistics`, `Entropy`
+    and `Integrate` algorithms chose their fields (or a shortcut) from this rank's
+    pieces; a rank without any now gets the others' choice.
+  - `merge_pieces` onto a root rank without pieces refused; the merge is made on
+    the first rank that has pieces and moved to the root.
+  - `test_empty_ranks.py` runs every algorithm over pieces, AMR hierarchies,
+    octrees, advection and the VTK algorithms over pieces on 3 ranks, with the
+    pieces on one, two or none of them, against the same pieces in one process.
+- Debug mode on HIP: the bounds check helper `__tack_in_bounds__` is
+  `__noinline__`. hipRTC (ROCm 7.1.1) at `-O2` and above miscompiled it
+  inlined, and five `test_high_order.py` cases reported in-bounds accesses out
+  of bounds, with 0.5f's bits in an index's high half. CUDA's stays inline.
+- Level Zero: every kernel requires sub-groups of 16
+  (`intel_reqd_sub_group_size(16)`), so IGC never compiles one SIMD32. On a
+  Max 1100 (IGC 2.7.11, compute runtime 25.05) IGC's SIMD32 code for five
+  tack-vis kernels was wrong: crossings of high-order contours and slices
+  (in f32, and with 64-bit ids), a simplex subdivision's lattice points, and
+  AMR `ghost_cells`' marks. Their SIMD16 code, fully optimized, is right.
+  Compute runtime 26.40 does not fix it.
+- Examples 50-53 on Level Zero make their device in VTK's Level Zero context
+  (`init_level_zero()`) where VTK has one, else Tack's own: under a VTK that
+  holds Level Zero memory, their outputs went back to VTK from Tack's own
+  context and were refused. The examples test skips 42 and 43, which need
+  that context, under a VTK without one, as it skips a missing optional module.
+- A VTK with DLPack but without the device's memory (VTK master's nightly
+  wheels, whose Viskores runs on the CPU alone yet lists CUDA and ROCm among
+  `dlpack_support.supported_device_types()`) no longer fails every VTK
+  algorithm on a GPU as it hands its output back: the interop shares one value
+  once per device (`_vtk_holds`, by memory domain, VTK's error for a refusal not
+  shown), and copies to the host where VTK cannot hold the memory.
+
 ## 0.6.1 — 2026-10-28
 
 A fix for Tack's CPU on many threads. 0.6.0 capped every fan-out's chunks

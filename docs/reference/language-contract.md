@@ -1,7 +1,7 @@
 # Kernel language contract (draft)
 
-This is the draft contract for compiler hardening, updated for the 0.6.0
-release on 2026-10-28.
+This is the draft contract for compiler hardening, updated for the 0.7.0
+release on 2026-11-06.
 It defines the intended portable kernel model, identifies known violations,
 and separates decisions still open for discussion. It is **not a claim that
 the current implementation satisfies every requirement below**. The baseline
