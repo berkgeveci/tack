@@ -4,6 +4,7 @@
 """`tack.sync_async` and `Array.numpy_async`: waiting for the device from
 ``asyncio`` without blocking the event loop (`tack.runtime.aio`)."""
 import asyncio
+import math
 import sys
 import time
 
@@ -23,6 +24,14 @@ pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 # stands clear of a blocked wait's 2.
 _TICKS_PER_MS = 0.01 if sys.platform == "win32" else 0.05
 _MIN_WAIT = 0.4 if sys.platform == "win32" else 0.1
+
+# The device is kept busy by several launches of `_spin`, each of `_PIECE` to
+# twice that, for about `_BUSY` in all. One launch as long as the whole (150 ms,
+# found in fourfold steps, so up to 600 ms) hung the GPU of CI's hosted Mac on
+# macOS 26.7.2 (#380), and macOS then ignores every later submission of the
+# process: the rest of the Metal share failed with it.
+_PIECE = 0.02
+_BUSY = 0.15
 
 
 @tack.kernel
@@ -75,9 +84,10 @@ def test_numpy_async_reads_what_was_queued(backend):
     np.testing.assert_array_equal(again, rows)
 
 
-def _long_launch(out):
-    """Iterations for a launch of about 150 ms on this device (or None if
-    even a long one is too quick to tell from the loop's own overhead)."""
+def _short_launch(out):
+    """Iterations for a launch of `_PIECE` to twice that on this device, and
+    the number of them that keep it busy for `_BUSY` (or None if even a long
+    launch is too quick to tell from the loop's own overhead)."""
     iters = 1000
     while iters < 1 << 28:
         _spin(out, iters)
@@ -85,24 +95,38 @@ def _long_launch(out):
         t0 = time.perf_counter()
         _spin(out, iters)
         tack.sync()
-        if time.perf_counter() - t0 >= 0.15:
-            return iters
-        iters *= 4
+        elapsed = time.perf_counter() - t0
+        if elapsed >= _PIECE:
+            return iters, math.ceil(_BUSY / elapsed)
+        iters *= 2
     return None
 
 
-def _long_enough(run, iters, attempts=4):
-    """``run(iters)``, which returns a result and the waits it measured,
-    with iterations doubled until every wait lasts `_MIN_WAIT`. Other processes
+def _busy(out, iters, count):
+    """`count` launches of `_spin`, queued. On Metal each is a command buffer
+    of its own, so none runs longer than one launch: the backend batches up to
+    64 launches into one otherwise. Its marker commits the open batch and
+    waits for nothing; other backends queue each launch on its own."""
+    backend = get_backend()
+    for _ in range(count):
+        _spin(out, iters)
+        if backend.name == "metal":
+            backend.async_marker()
+
+
+def _long_enough(run, count, attempts=4):
+    """``run(count)``, which returns a result and the waits it measured,
+    with the launches doubled until every wait lasts `_MIN_WAIT` (each launch
+    stays as long as calibrated). Other processes
     on the device (pytest-xdist workers) can slow the calibration far more
     than the run: on Level Zero with four workers a launch calibrated at
     300 ms later ran in 44. They only ever lengthen a wait, so a retry
     settles it."""
     for _ in range(attempts):
-        result, waits = run(iters)
+        result, waits = run(count)
         if min(waits) >= _MIN_WAIT:
             return result
-        iters *= 2
+        count *= 2
     pytest.fail(f"waits under {_MIN_WAIT * 1000:.0f} ms after {attempts} doublings: {waits}")
 
 
@@ -114,11 +138,12 @@ def test_the_loop_runs_while_the_device_works(backend, wait):
     if not _queues(backend):
         pytest.skip(f"{backend} launches complete before returning")
     out = tack.empty((1 << 18,))
-    iters = _long_launch(out)
-    if iters is None:
+    found = _short_launch(out)
+    if found is None:
         pytest.skip("no launch long enough to measure here")
+    iters, count = found
 
-    async def measure(block, iters):
+    async def measure(block, count):
         ticks = 0
         stop = asyncio.Event()
 
@@ -131,7 +156,7 @@ def test_the_loop_runs_while_the_device_works(backend, wait):
         task = asyncio.create_task(ticker())
         await asyncio.sleep(0.005)
         before = ticks
-        _spin(out, iters)
+        _busy(out, iters, count)
         t0 = time.perf_counter()
         if block:
             tack.sync()
@@ -145,12 +170,12 @@ def test_the_loop_runs_while_the_device_works(backend, wait):
         await task
         return ticks - before, elapsed
 
-    def both(iters):
-        blocked = asyncio.run(measure(True, iters))
-        free = asyncio.run(measure(False, iters))
+    def both(count):
+        blocked = asyncio.run(measure(True, count))
+        free = asyncio.run(measure(False, count))
         return (blocked, free), (blocked[1], free[1])
 
-    (blocked_ticks, blocked_s), (free_ticks, free_s) = _long_enough(both, iters)
+    (blocked_ticks, blocked_s), (free_ticks, free_s) = _long_enough(both, count)
     # Ticks are 1 ms sleeps; the free wait should see many of them, the
     # blocked one almost none. On a loaded host a 1 ms sleep takes 2-4 ms
     # (Level Zero, load 115, four workers: 50 ticks in 207 ms), and up to
@@ -170,13 +195,14 @@ def test_the_loop_launches_while_a_read_waits(backend):
         pytest.skip(f"{backend} launches complete before returning")
     out = tack.empty((1 << 18,))
     short = tack.empty((16,))
-    iters = _long_launch(out)
-    if iters is None:
+    found = _short_launch(out)
+    if found is None:
         pytest.skip("no launch long enough to measure here")
+    iters, count = found
     _ramp(short, 1.0)                        # compiled before, not on the loop
     tack.sync()
 
-    async def main(iters):
+    async def main(count):
         launched = 0
         stop = asyncio.Event()
 
@@ -187,7 +213,7 @@ def test_the_loop_launches_while_a_read_waits(backend):
                 launched += 1
                 await asyncio.sleep(0.001)
 
-        _spin(out, iters)
+        _busy(out, iters, count)
         task = asyncio.create_task(launcher())
         t0 = time.perf_counter()
         await out.numpy_async()
@@ -196,11 +222,11 @@ def test_the_loop_launches_while_a_read_waits(backend):
         await task
         return launched, elapsed
 
-    def once(iters):
-        launched, elapsed = asyncio.run(main(iters))
+    def once(count):
+        launched, elapsed = asyncio.run(main(count))
         return (launched, elapsed), (elapsed,)
 
-    launched, elapsed = _long_enough(once, iters)
+    launched, elapsed = _long_enough(once, count)
     # At least one per 20 ms of a 1 ms cadence: a loaded host's 1 ms sleep
     # takes ~10 ms (illyad at load 120-185 reached 0.09 per ms), and a wait
     # that blocks launches allows about one per wait (0.003 per ms). Windows
@@ -216,16 +242,17 @@ def test_sync_async_does_not_wait_for_later_launches(backend):
         pytest.skip(f"{backend} launches complete before returning")
     out = tack.empty((1 << 18,))
     short = tack.empty((16,))
-    iters = _long_launch(out)
-    if iters is None:
+    found = _short_launch(out)
+    if found is None:
         pytest.skip("no launch long enough to measure here")
+    iters, count = found
 
     async def main():
         _ramp(short, 1.0)
         waiter = asyncio.create_task(tack.sync_async())
         await asyncio.sleep(0)               # the waiter runs up to its await: marked
         t0 = time.perf_counter()
-        _spin(out, iters)                    # queued after the mark
+        _busy(out, iters, count)             # queued after the mark
         await waiter
         early = time.perf_counter() - t0
         await tack.sync_async()
