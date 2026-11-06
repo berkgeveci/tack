@@ -44,6 +44,7 @@ end: they follow from the contract, and no vendor fix would remove them.
 | Waits go through ctypes on the runtime library (`_runtime`, `_StreamMarker`), never hip-python's `hipStreamSynchronize`. | hip-python 7.x wrappers; ROCm 7.1 | hip-python holds the GIL while the runtime waits (another thread ran 6 times during a 357 ms wait, 353 through ctypes), and ROCm 7.1's stream synchronize holds the stream, so another thread's launch waited the whole 350 ms. | `runtime/hip_backend.py` | `test_hip_async.py`, `test_asyncio.py` |
 | `HIPTextureImage` writes array handles and fixed-size arrays through ctypes, located from neighbouring views. | hip-python 7.x struct wrappers | `make_hipExtent` and friends are gone, `hipCreateChannelDesc` returns `(err, desc)`, nested members are read-only views, and `res.array.array`, `hipMemcpy3DParms.dstArray` and `hipTextureDesc.addressMode` are not exposed at all. | `runtime/hip_backend.py` | `test_hip.py` (texture tests; MI210 with point filtering) |
 | Textures fall back to software sampling where the device has no image hardware, and on gfx90a. | MI300 (gfx940-942) has no texture hardware; gfx90a (MI200) reports image support but refuses a linearly filtered 3D texture (`hipErrorNotSupported`) | hipRTC refuses `tex3D` ("The image/texture API not supported on the device"), or texture creation fails. | `HIPBackend.texture_in_hardware` (asks `hipDeviceAttributeImageSupport` and tries a 2×2×2 texture at init) | `test_texture_snapshot.py` |
+| Debug mode's bounds check helper (`__tack_in_bounds__`) is `__noinline__` (the `hip` dialect in `codegen/bounds.py`, `HIPCodeGen._BOUNDS_DIALECT`). | ROCm 7.1.1's hipRTC on two MI210s (gfx90a; illyad, 2026-11-05) | Inlined, at `-O2` and above (hipRTC's default `-O3`) some checks were given a 64-bit index whose low half was right and whose high half was `0x3f000000`, so an access in bounds was reported out of bounds and skipped. Seen only in `_values` of `subdivide` (the `edge_id` check of a high-order space); `-O0`/`-O1` were right, and plain mode, which has no helper, is unaffected. | `codegen/bounds.py`, `codegen/hip_gen.py` | `TACK_DEBUG=1` on `test_high_order.py`'s HIP cases (`test_subdividing_an_l2_geometry_keeps_its_cells_apart`, `test_a_tolerance_chooses_the_steps`, `test_an_order_two_bound_holds_the_interior`, `test_mixed_meshes_subdivide_and_contour_as_one`) |
 | A launch is capped below 2^32 work-items. | AMD's dispatch packet | The packet counts work-items in 32 bits; a larger grid would wrap. | `HIPBackend._query_max_launch` | `test_launch_limits.py` |
 | Arrays take `hipMalloc` memory through Tack's cache of dropped arrays' buffers (`buffer_cache.BufferCache`, `_Queue.cache`), not the stream-ordered pool. | ROCm 7.1.1 on two MI210s (illyad, 2026-10-27) | `hipMallocAsync` slows with every allocation the pool has made (`amd::VmHeap::InsertBlock`): over the 512 eta pieces' global ids from 63 to 600 µs a call, 2.7 ms when trimmed after each step, and the port stalled for two hours. Plain `hipMalloc` stays at 17 µs, but each `hipFree` waits for the device (the pieces' contours 24.7 s against 7.8 pooled). | `runtime/hip_backend.py` (`HIPBuffer`, `_Queue`), `runtime/buffer_cache.py`; `TACK_HIP_ALLOCATOR=pool` for the pool | `test_buffer_cache.py`; `test_multi_device_switching.py` (each device's cache its own) |
 | A GPU-aware MPI is handed `hipMalloc` memory, never the stream-ordered pool's: `tack.communication` copies an array into a buffer from `allocate_mpi_array` before a send and receives into one (`HIPBackend.mpi_direct`). | MVAPICH-Plus 4.1 for ROCm 7.1.1, its embedded UCX with `libuct_rocm`; two MI210s (illyad, 2026-10-24) | HSA reports pool memory (`hipMallocAsync`) as `HSA_EXT_POINTER_TYPE_HSA_VMEM`, which this UCX takes for host memory: a send asserts (`rndv_rtr.c:121 rkey_size == packed_rkey_size`) or, eagerly, segfaults reading the device address. `hipMalloc` memory (`HSA`) goes through at 44 GB/s a rank; the copy costs a device-to-device pass. | `runtime/hip_backend.py`, `communication/_world.py` (`_direct`, `_empty_for_mpi`) | `test_hip.py::test_memory_for_a_gpu_aware_mpi`; `test_communication.py`'s `gpu-aware-not-direct` MPI run (the CPU standing in) |
@@ -72,6 +73,7 @@ and goes when 7.x support does.
 | Copies to the device up to 16 MiB and from it up to 64 KiB go through pooled USM host memory (`_HostStaging`). | Driver 25.05 | Appending a copy from pageable memory did not return until the queue drained (to the device up to 4 MiB, from it up to 1 KiB), so a launch's scalar upload waited for every kernel before it. | `level_zero_backend.py` | `test_level_zero_async.py` |
 | `f64` `floor` and `ceil` are wrapped as `copysign(floor(x), x)`. | Max 1100, intel-opencl-icd 25.05.32567.17 | The double overloads returned `+0.0` for `ceil(-0.1)` and `floor(-0.0)`, where IEEE 754 requires `-0.0`; the f32 overloads are correct. Exact for every input, since neither function changes its operand's sign. | `OpenCLCodeGen._expr_call` | `test_float_semantics.py` on Level Zero |
 | A runtime vector or matrix component index is compared as an i32: the selector is cast once where it is captured. | IGC 2.7.11 (compute runtime 25.05, Max 1100) | A chain of 64-bit equality tests on a selector that a conditional expression defined (`rows[f][j + 1 if j + 1 < size else 0]` in a sequential loop) selected the first component for an even selector and the last for an odd one, so the polyhedra face kernels read a triangle's padded -1 under debug mode's bounds checks (TA-48). `-ze-opt-disable` avoided it, as did a 32-bit selector, a `switch` or plain index arithmetic; the generated OpenCL C is correct and the CPU agrees. | `lowering/vectors.py` (`_narrow_selector`) | `test_new_features.py` (`test_runtime_component_from_a_conditional_in_a_loop`) on Level Zero |
+| Every kernel requires sub-groups of 16 (`intel_reqd_sub_group_size(16)`), so none is compiled SIMD32. | IGC 2.7.11 (compute runtime 25.05.32567.17, Max 1100) | Five tack-vis kernels computed wrong crossings, lattice points and AMR ghost marks; see below. | `opencl_gen.py` (`OCL_SUB_GROUP_SIZE`) | `test_opencl_gen.py` (`test_every_kernel_requires_sub_groups_of_16`); on Level Zero, with `--ids=i32` and `--ids=i64`, `test_high_order.py` (`test_everything_in_f32_on_every_backend`), `test_simplex_order.py` (contours and slices) and `test_bernstein.py` (`test_pieces_share_their_coefficients_to_the_bit`), and `vis2_amr` |
 | A stored native binary the driver refuses is rebuilt from the stored SPIR-V. | Drivers that refuse another build's native binary | The disk cache entry would be unusable. Counted as `native_refused` in the cache stats. | `level_zero_backend.load_variant` | `test_disk_cache.py` (`test_a_refused_native_binary_falls_back_to_spirv`) |
 
 ## CPU (LLVM)
@@ -159,6 +161,29 @@ requires `-0.0`. The `f32` overloads are correct. `OpenCLCodeGen._expr_call`
 wraps those two builtins at double width as `copysign(floor(x), x)`. Neither
 function ever changes the sign of its operand, so restoring it is exact for
 every input, and a no-op where the runtime is already correct.
+
+**Level Zero: no SIMD32 kernels.** On an Intel Data Center GPU Max 1100
+(IGC 2.7.11, compute runtime 25.05.32567.17), five tack-vis kernels gave
+wrong answers as IGC compiled them: `_roots` and `_straight_rows` in
+`_crossings.py`, `_trace_simplex_straight` in `subdivide.py` (288 of 5914
+lattice points of a six-step subdivision misplaced) and
+`_ghost_points_of`/`_ghost_cells_of` in `amr_ghosts.py`. They failed the
+high-order contour in f32, and with 64-bit ids the Bernstein pieces and
+the simplex contour and slice; AMR `ghost_cells` of `vis2_amr`'s hierarchy
+marked the wrong points. The generated OpenCL C was correct, and the CPU
+and debug mode agreed. Each kernel was found by building halves of a
+test's kernels with `-ze-opt-disable`. That flag fixed each kernel's own
+test, but `_roots` unoptimized hung the f32 contour with 32-bit ids;
+`-ze-opt-large-register-file` fixed `_roots` there and not with 64-bit
+ids, and `-ze-opt-disable-recompilation` did the reverse. `_roots` with
+required SIMD32 failed both cases and with required SIMD16 passed both,
+fully optimized, as did all five kernels at SIMD16 in every case.
+Rewriting their selections as integer arithmetic fixed some cases and
+moved the error in others, and would have changed every backend's code.
+Compute runtime 26.40 (IGC 2.42) fixed `_roots` but gave NaNs in
+`_straight_rows`, so this is not gated on a version. `OpenCLCodeGen`
+puts `__attribute__((intel_reqd_sub_group_size(16)))` on every kernel;
+Intel GPUs from Gen9 on have sub-groups of 16.
 
 **OpenCL C dialect rules.** Two inherited CUDA spellings are illegal OpenCL
 C and failed only on the device: a floating-point condition in `?:`

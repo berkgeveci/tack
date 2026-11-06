@@ -1008,7 +1008,9 @@ def _structured_face_tables(shape):
     """Per local face of a structured cell (``Hexahedron``, or ``Quad`` whose faces
     are its edges): its normal axis, whether it is the cell's high side on it,
     and the orientation its cell has as the face's side 1 -- read once from the
-    general derivation of a tiny grid, so the two cannot disagree."""
+    general derivation of a tiny grid, so the two cannot disagree. The tiny grid
+    is on the CPU whatever device asks first: the tables are host arrays, and
+    the kernels compiled for them are the CPU's every time."""
     if shape not in _FACE_TABLES:
         solid = shape.DIMENSION == 3
         axis, high = [], []
@@ -1022,10 +1024,11 @@ def _structured_face_tables(shape):
                     axis.append(a)
                     high.append(values.pop())
                     break
-        tiny = StructuredTopology((3, 3, 3) if solid else (3, 3))
-        faces = Faces._derive_sorted(tiny)
-        slots = faces.side_slot.numpy()
-        orientations = faces.side_orientation.numpy()
+        with tack.device("cpu"):
+            tiny = StructuredTopology((3, 3, 3) if solid else (3, 3))
+            faces = Faces._derive_sorted(tiny)
+            slots = faces.side_slot.numpy()
+            orientations = faces.side_orientation.numpy()
         turned = [0] * shape.NUM_FACES
         for s_, (slot, orientation) in enumerate(zip(slots, orientations)):
             if slot == 1:

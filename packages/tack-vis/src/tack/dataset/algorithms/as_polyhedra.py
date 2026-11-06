@@ -79,7 +79,7 @@ def as_polyhedra(data, fields=None):
     same_way = tack.zeros((1,), tack.i32)
     for group in topology.groups():
         if group.count:
-            _same_way(data.domain_view("cells", group), same_way)
+            _same_way(data.domain_view("cells", group, incidence="faces"), same_way)
     if same_way[0]:
         raise ValueError(f"{same_way[0]} faces are wound the same way by both their cells "
                          "(an inside-out cell beside an upright one, as cell_geometry's "
@@ -110,8 +110,8 @@ def as_polyhedra(data, fields=None):
     cell_face_sides = tack.empty((entries,), tack.u8)
     for group in topology.groups():
         if group.count:
-            _cell_face_entries(data.domain_view("cells", group), cell_offsets, cell_faces,
-                               cell_face_sides)
+            _cell_face_entries(data.domain_view("cells", group, incidence="faces"),
+                               cell_offsets, cell_faces, cell_face_sides)
     out = PolyhedralTopology(starts, face_points, cell_offsets, cell_faces, cell_face_sides,
                              num_points=data.num_points)
 

@@ -15,6 +15,10 @@ from tack.lang import ir_bounds
 # qualifiers, the 64-bit integer, the errors pointer, the atomic add on it
 _DIALECTS = {
     'cuda': ('__device__ inline', 'long long', 'int*', 'atomicAdd(errors, 1)'),
+    # Not inlined on HIP: inlined, ROCm 7.1.1's hipRTC at -O2 and above passed
+    # some checks' 64-bit index with garbage in its high half (docs/design/
+    # vendor-workarounds.md).
+    'hip': ('__device__ __noinline__', 'long long', 'int*', 'atomicAdd(errors, 1)'),
     'opencl': ('static inline', 'long', '__global int*',
                ('atomic_fetch_add_explicit((volatile __global atomic_int*)errors, 1, '
                 'memory_order_relaxed, memory_scope_device)')),

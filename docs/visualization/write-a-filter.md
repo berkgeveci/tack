@@ -218,7 +218,8 @@ a triangle. So `carry` gets a map for each.
   scan numbers them. A second kernel records each new point's two ends and its
   weight, how far it lies from the first end. The two triangles on an edge
   then name its point by the same number, `slots[face_id]`, so their lines
-  join.
+  join. That kernel over the triangles reads their faces, so its `for_each`
+  asks for them: `incidence="faces"`.
 - **Place each crossing as the built-ins do.** `td.edge_crossing` is the rule
   every built-in cut uses. It interpolates from the end that comes first by
   position (x, then y, then z), so every piece holding the edge computes the

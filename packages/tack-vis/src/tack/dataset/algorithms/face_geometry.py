@@ -103,7 +103,7 @@ def _face_geometry_of(data):
         kernel = _edge_geometry if dimension == 2 else _end_geometry
         for group in data.launch_groups("cells", []):
             if group.count and group.shape.DIMENSION == dimension:
-                kernel(data.domain_view("cells", group), normals, areas)
+                kernel(data.domain_view("cells", group, incidence="faces"), normals, areas)
     else:
         for_each(_face_geometry, data, "faces", normals, areas)
     # A face of a k-dimensional mesh measures k - 1 dimensions; a polyline end's

@@ -166,7 +166,8 @@ def _consistent(data):
     relations = tack.zeros((nf,), tack.i32)
     for group in data.launch_groups("cells", []):
         if group.count and group.shape.DIMENSION == 2:      # lines and vertices: no edges
-            _edge_relations(data.domain_view("cells", group), faces.sides, pairs, relations)
+            _edge_relations(data.domain_view("cells", group, incidence="faces"),
+                            faces.sides, pairs, relations)
     parents = tack.array(2 * np.arange(n, dtype=pdt.numpy_dtype), pdt)
     changed = tack.zeros((1,), tack.i32)
     while nf:

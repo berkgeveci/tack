@@ -85,6 +85,7 @@ def jump(data, field):
             sides.fill(0)
         for group in data.launch_groups("cells", [field]):
             if group.count:
-                _side_centers(data.domain_view("cells", group), field.view(group), sides)
+                _side_centers(data.domain_view("cells", group, incidence="faces"),
+                              field.view(group), sides)
         for_each(_jump, data, "faces", sides, out)
     return Field(Values(data, "faces"), out, units.delta(field.unit))

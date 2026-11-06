@@ -497,7 +497,9 @@ def _entity_traces(data, faces=True):
                 np.arange(q ** shape.DIMENSION, dtype=np.int32) if tensor else
                 np.asarray(bases.view_index(shape, space.order, space._any_order(shape)),
                            np.int32))
-            cells = data.domain_view("cells", group)
+            cells = data.domain_view(
+                "cells", group,
+                incidence=("edges", "faces") if solid and shape.DIMENSION == 3 else "edges")
             _copy_edge_traces(cells, edge_nodes, view_of, q, edges)
             if solid and shape.DIMENSION == 3:
                 if tensor or bases.wedge_shape(shape):
@@ -1070,14 +1072,30 @@ class DataSet:
         return self.launch_groups(domain)
 
     @on_inputs_device
-    def domain_view(self, domain, group, extra=(), **extra_attributes):
-        """``group``'s view: kind, shape, geometry, and for cells their incidence when
-        faces and edges have been derived; ``extra`` mixins and attributes last
-        (a space's node mixins, ``node_views``)."""
+    def domain_view(self, domain, group, extra=(), *, incidence=(), **extra_attributes):
+        """``group``'s view: kind, shape, geometry; for cells, the incidence
+        ``incidence`` names -- ``"faces"`` (``face_id``, ``face_side``, ...), ``"edges"``
+        (``edge_id``, ``edge_sign``) -- derived if it is not yet, and whatever
+        incidence a curved geometry reads; ``extra`` mixins and attributes last (a
+        space's node mixins, ``node_views``).
+
+        A view has what it is asked for, not what other filters happened to derive
+        before: its class, and so the kernels compiled for it, are the same either
+        way."""
+        wanted = {incidence} if isinstance(incidence, str) else set(incidence)
+        if wanted - {"faces", "edges"}:
+            raise ValueError(f"incidence is 'faces', 'edges' or both, not {incidence!r}")
         mixins = []
         kind = self._kind(domain)
         geometry, attributes = _geometry_parts(self, group, kind)
         mixins.extend(geometry)
+        if kind == "cells":
+            # A curved geometry's nodes on edges and faces are read through the
+            # cells' incidence (``_geometry_parts`` derived it).
+            if "side_face" in attributes:
+                wanted.add("faces")
+            if "side_edge" in attributes:
+                wanted.add("edges")
         if kind == "cells" and issubclass(group.kind, views._CellsById):
             mixins.append(views._PolyhedralWalk)
             if group.shape is shapes.Polyhedron:
@@ -1086,15 +1104,15 @@ class DataSet:
                 mixins.append(views._PolygonLocation)
             elif group.shape is shapes.PolyLine:
                 mixins.append(views._PolylineLocation)
+        faces = self.topology.faces() if kind == "cells" and "faces" in wanted else None
         if (kind == "cells" and issubclass(group.kind, views._PolylineCells)
-                and self.topology._faces is not None):
+                and faces is not None):
             mixins.append(views._PolylineIncidence)
             attributes.update(cell_faces=self.topology.cell_faces,
                               cell_face_sides=self.topology.cell_face_sides)
         if kind == "cells":
             # A subgroup's index(c) is its position in the topology's group, so
             # it shares that group's incidence.
-            faces = self.topology._faces
             # The cells the faces were derived from: those of the top dimension.
             if faces is not None and group.root in getattr(faces, "group_starts", {}):
                 mixins.extend((views._FaceIncidence, views._FaceWalk))
@@ -1106,7 +1124,7 @@ class DataSet:
                 # A shape's faces walk from its tables alone, with no derived
                 # faces: a fresh mesh's volumes need not sort them.
                 mixins.append(views._FaceWalk)
-            edges = self.topology._edges
+            edges = self.topology.edges() if "edges" in wanted else None
             if edges is not None and group.shape.NUM_EDGES:
                 mixins.append(views._EdgeIncidence)
                 attributes.update(side_edge=edges.side_edge, side_sign=edges.side_sign,
@@ -1338,13 +1356,15 @@ class DataSet:
 
 
 @on_inputs_device
-def for_each(kernel, data, domain, *args):
+def for_each(kernel, data, domain, *args, incidence=()):
     """Run ``kernel(view, *args)`` once per shape in ``domain`` of ``data``.
 
     ``view`` is the domain's view for that shape (``for i in view``); every
     ``Field`` among ``args`` becomes its view for the same shape, so
     ``u.value(i, pc)`` and ``u.at(i)`` read the entity ``i`` the loop is at.
-    Other arguments pass through.
+    Other arguments pass through. A kernel over cells that reads their faces
+    or edges (``face_id``, ``edge_id``, ...) names them in ``incidence``
+    (``DataSet.domain_view``).
 
     ``domain`` may also be a ``Space``: the kernel then runs over the space's
     nodes (``DataSet.node_views``), taking arrays, not fields.
@@ -1365,7 +1385,7 @@ def for_each(kernel, data, domain, *args):
     for group in data.launch_groups(domain, [a for a in args if isinstance(a, Field)]):
         if not group.count:
             continue
-        view = data.domain_view(domain, group)
+        view = data.domain_view(domain, group, incidence=incidence)
         kernel(view, *(a.view(group) if isinstance(a, Field) else a for a in args))
 
 

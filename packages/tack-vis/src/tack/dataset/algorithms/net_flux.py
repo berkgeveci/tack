@@ -47,5 +47,5 @@ def net_flux(data, flux):
     values = materialize(flux.values)
     for group in data.launch_groups("cells", []):
         if group.count and group.shape.DIMENSION == data.topology.dimension > 0:
-            _outward_sums(data.domain_view("cells", group), values, out)
+            _outward_sums(data.domain_view("cells", group, incidence="faces"), values, out)
     return Field(Values(data, "cells"), out, flux.unit)

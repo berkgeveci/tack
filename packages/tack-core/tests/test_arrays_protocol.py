@@ -239,7 +239,10 @@ def test_implicit_arrays_index_from_the_host_as_arrays_do():
              ta.CountingArray(5, start=3, step=2),
              ta.UniformCoordinates((3, 2, 2), origin=(1, 0, 0), spacing=(0.5, 1, 1)),
              ta.CartesianProduct([0.0, 1.0, 3.0], [0.0, 2.0]),
-             ta.Permutation(stored, tack.array(np.array([5, 0, 3], np.int32)))]
+             ta.Permutation(tack.array(np.array([5, 0, 3], np.int32)), stored)]
+    # Ids first: given the other way round, the floats were ids into the three
+    # ids, read out of bounds alike on the host and in the kernel (TACK_DEBUG).
+    np.testing.assert_array_equal(ta.to_host(cases[-1]), [7.5, 0.0, 4.5])
     for values in cases:
         host = np.asarray(ta.to_host(values))
         assert len(values) == host.shape[0]

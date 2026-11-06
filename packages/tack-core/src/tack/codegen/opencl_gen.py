@@ -35,6 +35,13 @@ _OCL_INT = "long"
 OCL_LAUNCH_INDEX = ("(long)get_group_id(0) * (long)get_local_size(0) "
                     "+ (long)get_local_id(0)")
 
+# Every kernel requires sub-groups of 16, so IGC never compiles one SIMD32:
+# on a Max 1100 (IGC 2.7.11) its code for five tack-vis kernels was wrong
+# (for one, required SIMD32 failed the same way, and -ze-opt-disable hung),
+# and their SIMD16 code, fully optimized, was right. Intel GPUs from Gen9 on
+# have sub-groups of 16. See docs/design/vendor-workarounds.md.
+OCL_SUB_GROUP_SIZE = 16
+
 _OCL_C_TYPE_MAP = {
     i8:  "char",
     u8:  "uchar",
@@ -116,6 +123,7 @@ class OpenCLCodeGen(CUDACodeGen):
 
         sig = ", ".join(params_c)
         safe_name = kernel_entry_name(func.name)
+        self._emit(f"__attribute__((intel_reqd_sub_group_size({OCL_SUB_GROUP_SIZE})))")
         self._emit(f"__kernel void {safe_name}({sig}) {{")
         self._indent += 1
 

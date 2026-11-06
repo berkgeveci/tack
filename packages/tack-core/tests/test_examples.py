@@ -12,9 +12,9 @@ takes about a minute against an 18-second suite. CI runs it as its own
 job; locally, `pytest -m slow`.
 
 Examples that need an optional third-party package, that do not offer
-the selected backend (CPU unless `TACK_EXAMPLES_ARCH` names another), or
-that read VTK's test data and cannot fetch it, skip themselves with the
-reason. That keeps the suite honest
+the selected backend (CPU unless `TACK_EXAMPLES_ARCH` names another), that
+read VTK's test data and cannot fetch it, or that share VTK's Level Zero
+context where this VTK has none, skip themselves with the reason. That keeps the suite honest
 about what it actually checked, and means adding an example with a new
 optional dependency will not turn CI red. A missing *tack* module is not
 treated as optional — that is a real failure.
@@ -85,6 +85,12 @@ def test_example_runs(path):
 
     if f"invalid choice: '{ARCH}'" in combined:
         pytest.skip(f"example does not offer the {ARCH} backend")
+
+    # init_level_zero() (42, 43) needs a VTK that holds Level Zero memory; VTK's
+    # wheel has no DLPack support, or no Level Zero context.
+    if ("needs vtkmodules.util.dlpack_support" in combined
+            or "this VTK has no Level Zero context to share" in combined):
+        pytest.skip("needs a VTK that holds Level Zero memory (init_level_zero)")
 
     if "needs VTK's test data" in combined:
         pytest.skip("needs VTK's test data (TACK_VTK_DATA, or a network to fetch it)")
