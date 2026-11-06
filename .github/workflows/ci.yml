@@ -1,6 +1,10 @@
 # CI for Tack.
 #
-# Three jobs, all independent so they report in parallel:
+# The jobs report in parallel. On a pull request, `changes` first says which
+# its files need (tools/ci_changes.py): a change to the docs alone runs lint
+# and docs; one to an example, lint and examples; anything in the packages,
+# the build or the workflows, everything. A job left out reports "skipping".
+# Pushes to main and runs by hand run everything.
 #
 #   docs       — builds the site strictly; publishes main's as `dev`
 #   tests      — the suite on Python 3.11/3.12/3.13 (Linux, CPU backend)
@@ -38,6 +42,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+
+  # ── What changed ───────────────────────────────────────────────────
+  # The groups a pull request's files need, as outputs the jobs below test:
+  # `code` (every test job, packaging and Metal), `docs`, `examples`. A path
+  # no rule of tools/ci_changes.py names is code. Lint needs no group.
+  changes:
+    name: what changed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+      docs: ${{ steps.classify.outputs.docs }}
+      examples: ${{ steps.classify.outputs.examples }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # A pull request checks out its merge commit, whose first parent
+          # is the base it merges into.
+          fetch-depth: 2
+
+      - name: Classify the changed files
+        id: classify
+        shell: bash
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            git diff --name-only HEAD^1 HEAD | python3 tools/ci_changes.py >> "$GITHUB_OUTPUT"
+          else
+            printf 'code=true\ndocs=true\nexamples=true\n' >> "$GITHUB_OUTPUT"
+          fi
+          cat "$GITHUB_OUTPUT"
 
   # ── Lint ───────────────────────────────────────────────────────────
   # Cheapest job here and the one most likely to catch something before a
@@ -91,6 +126,8 @@ jobs:
 
   docs:
     name: docs
+    needs: changes
+    if: needs.changes.outputs.docs == 'true' || needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -112,6 +149,14 @@ jobs:
 
       - name: Build the site
         run: uv run mkdocs build --strict
+
+      # Package tests that read the pages: each algorithm and export has its
+      # entry, and a VTK wrapper. A change to the docs alone runs no test job.
+      - name: The reference pages name everything
+        run: |
+          uv run --with pytest pytest -q -p no:cacheprovider \
+            packages/tack-vis/tests/test_reference_pages.py \
+            packages/tack-vis/tests/test_vtk_algorithms.py::test_every_algorithm_has_a_wrapper
 
   # ── Publish ────────────────────────────────────────────────────────
   #
@@ -165,6 +210,8 @@ jobs:
   # ── The main gate ──────────────────────────────────────────────────
   tests:
     name: tests (py${{ matrix.python-version }}, ${{ matrix.shard }}/4)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     # The suite in four shares (conftest's --shard, by test-durations.json), each
     # serial: whole, it took 25-35+ min by 2026-10-29 (35 cancelled #212's py3.11
@@ -242,6 +289,8 @@ jobs:
   # repeats the whole dataset suite, which would crowd the main gate.
   ids-i64:
     name: dataset tests with 64-bit ids (${{ matrix.shard }}/4)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     # In four shares (conftest's --shard): whole, 17.5-45 min by 2026-10-29 (30
     # cancelled #212's run); in three shares, 17-25+ min a share by 2026-11-02
@@ -282,6 +331,8 @@ jobs:
   # (the vault's coefficient-layout proposal, D7).
   l2-cells:
     name: dataset tests with L2 cell-fastest (${{ matrix.shard }}/2)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     # In two shares (conftest's --shard): whole, on four workers, it ran 13 min by
     # 2026-10-29, and #213's run (more compiled kernels a worker) lost its runner
@@ -324,6 +375,8 @@ jobs:
   # warp-simdata's int32 ids rather than sharing them.
   warp:
     name: Warp backend and interop
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -362,6 +415,8 @@ jobs:
   # warns (an annotation on the run) rather than failing the job.
   vtk-master:
     name: VTK master
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -409,6 +464,8 @@ jobs:
   # job rather than skip, and oversubscription lets 3 ranks run on any runner.
   mpi:
     name: mpi
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -467,6 +524,8 @@ jobs:
   # — so it needs its own job with a deliberately minimal install.
   packaging:
     name: GPU install needs no llvmlite
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -514,6 +573,8 @@ jobs:
   # from the sdist, and must run without tack-vis.
   wheels:
     name: Built wheels install and import
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -575,6 +636,8 @@ jobs:
   # the log says what was really checked rather than just "green".
   examples:
     name: examples
+    needs: changes
+    if: needs.changes.outputs.examples == 'true' || needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -605,6 +668,8 @@ jobs:
   # quietly omit the hardware cases.
   metal:
     name: metal (${{ matrix.shard }}/4)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: macos-latest
     # The suite in four shares (conftest's --shard), one process each: whole, it
     # took 42 min of a 45 min limit when macOS runners were short (2026-10-29),
