@@ -1,5 +1,6 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
+
 """Cut a grid into pieces with ghost cells, filter each piece, and reduce over them."""
 
 import argparse
@@ -52,6 +53,8 @@ def run(arch="cpu", check=False):
         td.statistics(cut, "RTData")
     except NotImplementedError as error:
         print("refused:", str(error).split(":")[0])
+    marked = td.generate_global_ids(cut)                     # owners found by matching
+    cut_stats = td.statistics(marked, "RTData")
     # --8<-- [end:no-ghosts]
     if check:
         iso = td.contour(whole, "RTData", 160.0)
@@ -61,6 +64,8 @@ def run(arch="cpu", check=False):
         assert triangles == iso.num_cells and surface_stats.n == iso.num_points
         assert sum(s.num_cells for s in finished) == iso.num_cells
         assert td.statistics(finished, "RTData").n == iso.num_points
+        assert cut_stats.n == iso.num_points
+        assert sum(owned(p.ghosts.cells, p.num_cells) for p in marked) == iso.num_cells
         # With ghost cells, a piece's gradients at its edge are the whole grid's.
         whole.fields["g"] = td.magnitude(whole, td.gradients(whole, "RTData"))
         whole_grad = td.statistics(whole, "g")

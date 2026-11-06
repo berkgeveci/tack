@@ -1,5 +1,7 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-FileCopyrightText: Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES
 # SPDX-License-Identifier: Apache-2.0
+
 """All-pairs and tiled N-body forces, adapted from NVIDIA Warp's tile example.
 
 Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES. Apache-2.0;

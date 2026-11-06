@@ -1,6 +1,7 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
 # SPDX-License-Identifier: BSD-3-Clause
-"""Five filters written with public names only, each checked against the built-in."""
+
+"""Six filters written with public names only, each checked against the built-in."""
 
 import argparse
 
@@ -10,7 +11,7 @@ import tack
 import tack.dataset as td
 from tack import communication as tc
 from tack.algorithms import exclusive_scan, histogram
-from tack.arrays import ConstantArray, CountingArray, materialize, size_of
+from tack.arrays import ConstantArray, CountingArray, dtype_of, size_of, to_host
 from tack.dataset import units
 
 
@@ -32,7 +33,9 @@ def elevation(data, low_point, high_point, range):
     direction = np.asarray(high_point, float) - np.asarray(data.origin) - low
     n = size_of(data.geometry.values)               # an implicit array has no .shape
     out = tack.empty((n,), data.dtype, device=data.device)
-    _elevations(materialize(data.geometry.values), *map(float, low), *map(float, direction),
+    # An implicit array goes to the kernel as it is: an image's positions are
+    # computed as the kernel reads them, never stored.
+    _elevations(data.geometry.values, *map(float, low), *map(float, direction),
                 float(direction @ direction), float(range[0]), float(range[1] - range[0]),
                 out)
     return td.Field(data.geometry.space, out)
@@ -106,8 +109,8 @@ def _cell_jump(faces, values, out):
 def jump(data, name):
     """A cell field's difference across each face: td.jump."""
     field = data.fields[name]
-    values = materialize(field.values)
-    out = tack.empty((data.topology.faces().num_faces,), values.dtype, device=data.device)
+    values = field.values                           # stored or implicit: kernels index both
+    out = tack.empty((data.topology.faces().num_faces,), dtype_of(values), device=data.device)
     td.for_each(_cell_jump, data, "faces", values, out)
     # A difference of degrees Celsius is in kelvin; unknown stays unknown.
     return td.Field(td.Values(data, "faces"), out, units.delta(field.unit))
@@ -162,6 +165,99 @@ def triangulate(data):
 # --8<-- [end:cells]
 
 
+# --8<-- [start:contour]
+@tack.kernel
+def _crossed_edges(faces, u, level, crossed):
+    # A 2D mesh's faces are its edges: 1 where the level lies between the two ends.
+    for f in faces:
+        above_a = u[faces.point_id(f, 0)] >= level
+        above_b = u[faces.point_id(f, 1)] >= level
+        crossed[faces.entity_id(f)] = 1 if above_a != above_b else 0
+
+
+@tack.kernel
+def _edge_points(faces, u, level, crossed, slots, ends, weights):
+    # Each crossed edge's point: its two ends, and how far it lies from the first,
+    # as td.edge_crossing places it -- from the end first by position, so pieces
+    # sharing the edge compute it to the same bits.
+    for f in faces:
+        e = faces.entity_id(f)
+        if crossed[e] == 1:
+            a = faces.point_id(f, 0)
+            b = faces.point_id(f, 1)
+            first, second, w = td.edge_crossing(level, a, b, u[a], u[b],
+                                                faces.corner_position(f, 0),
+                                                faces.corner_position(f, 1))
+            ends[slots[e]] = [first, second]
+            weights[slots[e]] = w
+
+
+@tack.kernel
+def _crossed_triangles(cells, u, level, counts):
+    # A triangle with one or two corners above the level holds one line.
+    for c in cells:
+        above = 0
+        for j in range(3):
+            if u[cells.point_id(c, j)] >= level:
+                above += 1
+        counts[cells.entity_id(c)] = 1 if above == 1 or above == 2 else 0
+
+
+@tack.kernel
+def _segments(cells, u, level, counts, starts, slots, connectivity, sources):
+    # Going round the triangle, its line runs from the edge where the values rise
+    # past the level to the edge where they fall back, so higher values lie on its
+    # right. Its points are those edges' points, numbered by `slots`.
+    for c in cells:
+        e = cells.entity_id(c)
+        if counts[e] == 1:
+            rising = slots[0] - slots[0]
+            falling = rising
+            for k in range(3):
+                above_a = u[cells.side_point_id(c, k, 0)] >= level
+                above_b = u[cells.side_point_id(c, k, 1)] >= level
+                if above_b and not above_a:
+                    rising = slots[cells.face_id(c, k)]
+                if above_a and not above_b:
+                    falling = slots[cells.face_id(c, k)]
+            connectivity[2 * starts[e]] = rising
+            connectivity[2 * starts[e] + 1] = falling
+            sources[starts[e]] = e
+
+
+def contour(data, name, level):
+    """Lines where a point field of a triangle mesh crosses a level: td.contour of a
+    surface."""
+    data = td.visible(data)
+    u = data.fields[name].values
+    n, idt, device = data.num_cells, data.id_dtype, data.device
+    # The points: one per edge the level crosses, numbered by a scan over the edges.
+    nf = data.topology.faces().num_faces
+    crossed = tack.empty((nf,), tack.i32, device=device)
+    td.for_each(_crossed_edges, data, "faces", u, level, crossed)
+    slots = tack.empty((nf,), idt, device=device)
+    count = exclusive_scan(crossed, slots, nf) if nf else 0
+    ends = tack.empty((count,), tack.vec(2, idt), device=device)
+    weights = tack.empty((count,), u.dtype, device=device)
+    td.for_each(_edge_points, data, "faces", u, level, crossed, slots, ends, weights)
+    # The lines: one per triangle the level crosses, numbered by a scan over the cells.
+    counts = tack.empty((n,), tack.i32, device=device)
+    td.for_each(_crossed_triangles, data, "cells", u, level, counts)
+    starts = tack.empty((n,), idt, device=device)
+    lines = exclusive_scan(counts, starts, n) if n else 0
+    connectivity = tack.empty((2 * lines,), idt, device=device)
+    sources = tack.empty((lines,), idt, device=device)
+    td.for_each(_segments, data, "cells", u, level, counts, starts, slots, connectivity,
+                sources, incidence="faces")
+    out = td.UnstructuredTopology(ConstantArray(int(td.shapes.LINE), lines, dtype=tack.u8,
+                                                device=device),
+                                  CountingArray(lines + 1, start=0, step=2, dtype=idt),
+                                  connectivity, num_points=count)
+    # Point i lies between points ends[i] at weights[i]; line i lies in cell sources[i].
+    return td.carry(data, out, points=td.Interpolate(ends, weights), cells=td.Pieces(sources))
+# --8<-- [end:contour]
+
+
 # --8<-- [start:pieces]
 def entropy(pieces, name, bins=10):
     """The entropy of a point field's histogram over every piece: td.entropy."""
@@ -181,7 +277,7 @@ def entropy(pieces, name, bins=10):
 
 
 def _host(values):
-    return None if values is None else np.asarray(materialize(values).numpy())
+    return None if values is None else np.asarray(to_host(values))
 
 
 def _same_arrays(a, b):
@@ -236,6 +332,8 @@ def run(arch="cpu", check=False):
             "shrink": _same_dataset(shrink(d, 0.6), td.shrink(d, 0.6)),
             "jump": _same_field(jump(d, "cell_value"), td.jump(d, "cell_value")),
             "triangulate": _same_dataset(triangulate(surface), td.triangulate(surface)),
+            "contour": _same_dataset(contour(td.triangulate(surface), "RTData", 165.25),
+                                     td.contour(td.triangulate(surface), "RTData", 165.25)),
         }
     results["pieces"] = {"entropy": entropy(pieces, "RTData") == td.entropy(pieces, "RTData")}
     if check:

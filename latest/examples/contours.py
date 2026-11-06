@@ -1,5 +1,7 @@
-# Copyright (c) 2026 Kitware, Inc.
+# SPDX-FileCopyrightText: Copyright (c) Kitware Inc.
+# SPDX-FileCopyrightText: Copyright (c) The Taichi Authors
 # SPDX-License-Identifier: Apache-2.0
+
 """Marching squares using count, scan, and write.
 
 Teaching adaptation of Taichi's marching_squares.py, Copyright (c) The Taichi Authors.

@@ -1,0 +1,18 @@
+Tack documentation examples
+
+All tutorial adaptations and new teaching material are Copyright (c) 2026
+Kitware, Inc. Files marked BSD-3-Clause use Tack's repository LICENSE.
+
+dye.py, physarum.py, contours.py and mpm.py adapt examples from Taichi,
+Copyright (c) The Taichi Authors, licensed under Apache License 2.0.
+The original mpm88 example is by Yuanming Hu. The Physarum example credits
+Sage Jenson's model and visual work. Each file and its tutorial link to
+the original source and describe the changes made for teaching.
+
+nbody.py adapts NVIDIA Warp's tile N-body example, Copyright (c) 2022
+NVIDIA CORPORATION & AFFILIATES, licensed under Apache License 2.0.
+The tiled algorithm is described by Lars Nyland, Mark Harris and Jan Prins
+in GPU Gems 3, chapter 31, Fast N-Body Simulation with CUDA.
+
+Apache-2.0 files retain that license; its text accompanies the examples in
+LICENSE-APACHE-2.0.txt. They are not relicensed under Tack's BSD license.

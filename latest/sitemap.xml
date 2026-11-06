@@ -1,311 +1,415 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/performance/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/install/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/contracts/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/performance/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/contracts/backend-capabilities/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/use-cases/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/contracts/conformance/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/communication/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/contracts/runtime-api/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/communication/blocks-and-worlds/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/design/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/communication/exchange-and-plans/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/design/array-api/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/communication/mpi/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/design/backend-implementations/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/communication/routing/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/design/compilation-pipeline/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/communication/sort-and-reduce/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/design/cpu-threading/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/contracts/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/design/interoperability/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/contracts/backend-capabilities/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/design/memory-and-aliasing/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/contracts/conformance/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/design/numerical-semantics/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/contracts/runtime-api/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/design/parallel-execution/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/core/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/design/principles/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/core/arrays-and-types/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/design/specialization-and-caching/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/core/asyncio/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/design/vendor-workarounds/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/core/choose-a-device/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/developers-guide/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/core/control-flow-and-math/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/developers-guide/01-architecture/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/core/debug-and-time/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/developers-guide/02-ast-transform/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/core/device-classes/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/developers-guide/03-ir/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/core/device-functions/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/developers-guide/04-ir-passes/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/core/examples/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/developers-guide/05-codegen/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/core/how-programs-run/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/developers-guide/06-runtime/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/core/kernel-cache/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/developers-guide/07-templates/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/core/kernels/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/developers-guide/08-adding-features/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/core/memory-and-correctness/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/reference/api/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/core/reductions-scans-sorts/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/reference/backends/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/core/share-arrays/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/reference/language-contract/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/core/vectors-and-matrices/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/core/workgroups-atomics-textures/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/01-getting-started/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/data/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/02-arrays-and-types/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/data/amr-and-octrees/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/03-kernels/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/data/build-meshes-and-fields/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/04-control-flow/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/data/cells-and-meshes/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/05-device-functions/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/data/connect-simulation-data/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/06-templates/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/data/devices/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/07-advanced/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/data/fields/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/08-backends/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/data/higher-order/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/11-reductions-and-scans/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/data/particles/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/12-execution-model/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/data/pieces/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/13-memory-and-parallelism/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/data/polyhedra/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/14-vectors-and-matrices/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/data/storage-and-layouts/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/15-debugging-and-timing/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/data/topology-and-geometry/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/16-interoperability/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/data/units-coordinates-time/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/17-kernel-cache/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/design/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/quick-reference/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/design/array-api/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/tutorials/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/design/backend-implementations/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/tutorials/contours/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/design/compilation-pipeline/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/tutorials/dye/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/design/cpu-threading/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/tutorials/heat/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/design/interoperability/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/tutorials/mpm/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/design/memory-and-aliasing/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/tutorials/nbody/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/design/numerical-semantics/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/users-guide/tutorials/physarum/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/design/parallel-execution/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/design/principles/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/00-function-spaces/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/design/specialization-and-caching/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/01-datasets/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/design/vendor-workarounds/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/02-meshes/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/developers-guide/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/03-fields-and-spaces/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/developers-guide/01-architecture/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/04-filters/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/developers-guide/02-ast-transform/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/05-mesh-kernels/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/developers-guide/03-ir/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/06-pipelines/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/developers-guide/04-ir-passes/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/07-partitioned/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/developers-guide/05-codegen/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/08-point-clouds/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/developers-guide/06-runtime/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/09-pieces-across/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/developers-guide/07-templates/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/10-amr/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/developers-guide/08-adding-features/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/11-octrees/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/reference/api/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/12-units/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/reference/backends/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/13-streaming/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/reference/glossary/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/14-communication/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/reference/language-contract/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/15-write-a-filter/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/users-guide/tutorials/contours/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/examples/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/users-guide/tutorials/dye/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/design/dataset-api/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/users-guide/tutorials/heat/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/design/polyhedra/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/users-guide/tutorials/mpm/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/reference/algorithms/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/users-guide/tutorials/nbody/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/reference/data-model/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/users-guide/tutorials/physarum/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
-         <loc>https://berkgeveci.github.io/tack/0.6/vis-guide/reference/dataset-api/</loc>
-         <lastmod>2026-10-29</lastmod>
+         <loc>https://kitware.github.io/tack/0.7/vis-guide/16-cells-and-bases/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/vis-guide/gallery/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/vis-guide/mfem-gallery/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/vis-guide/design/dataset-api/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/vis-guide/design/polyhedra/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/vis-guide/design/view-composition/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/vis-guide/reference/algorithms/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/vis-guide/reference/data-model/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/vis-guide/reference/dataset-api/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/vis-guide/reference/interop/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/vis-guide/reference/units/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/visualization/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/visualization/adaptive-data/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/visualization/derive/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/visualization/examples/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/visualization/extract/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/visualization/finite-volume/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/visualization/mfem-warp-and-others/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/visualization/over-pieces/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/visualization/over-time/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/visualization/points-and-particles/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/visualization/reduce/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/visualization/sample-and-trace/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/visualization/views/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/visualization/vtk/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/visualization/write-a-filter/</loc>
+         <lastmod>2026-11-06</lastmod>
+    </url>
+    <url>
+         <loc>https://kitware.github.io/tack/0.7/visualization/write-a-mesh-algorithm/</loc>
+         <lastmod>2026-11-06</lastmod>
     </url>
 </urlset>
