@@ -667,7 +667,7 @@ def _jumps(data, space, kernel, seed):
     s = tack.array(np.array([p[0] for p in _FACE_POINTS], np.float32))
     t = tack.array(np.array([p[1] for p in _FACE_POINTS], np.float32))
     out = tack.array(np.full(2 * 2 * data.topology.faces().num_faces * count * 2, np.nan, np.float32))
-    td.for_each(kernel, data, "cells", u, s, t, count, out)
+    td.for_each(kernel, data, "cells", u, s, t, count, out, incidence="faces")
     out = out.numpy().reshape(-1, 2, count, 2)
     inside = ~np.isnan(out[:, 1, 0, 0])
     if kernel is _normal_traces:

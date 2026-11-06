@@ -205,7 +205,8 @@ class Set:
                 if n:
                     tack.copyto(masks, host)
                 if cells.size:
-                    for_each(_side_faces, data, "cells", masks, flags, bad)
+                    for_each(_side_faces, data, "cells", masks, flags, bad,
+                             incidence="faces")
         if bad[0]:
             raise ValueError(f"{bad[0]} cells are given a local face they do not have")
         return cls._from_flags(data.topology, "faces", flags)
