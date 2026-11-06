@@ -151,7 +151,7 @@ def test_cells_know_their_edges(backend):
     edges = data.topology.edges()
     n = data.num_cells * 12
     ids, signs = tack.empty((n,), tack.i32), tack.empty((n,), tack.i32)
-    td.for_each(_edge_incidence, data, "cells", ids, signs)
+    td.for_each(_edge_incidence, data, "cells", ids, signs, incidence="edges")
     rows = edges.rows.numpy()
     assert (rows[:, 0] < rows[:, 1]).all()
     # VTK's hexahedron edges, and the cells' point ids in x-fastest order.
@@ -168,6 +168,31 @@ def test_cells_know_their_edges(backend):
             pa, pd = corners[a], corners[d]
             assert tuple(rows[ids[c, e]]) == (min(pa, pd), max(pa, pd))
             assert signs[c, e] == (1 if pa < pd else -1)
+
+
+@pytest.mark.parametrize("make", ["grid", "tetrahedra"])
+def test_cell_views_have_the_incidence_asked_for(backend, make):
+    """A cell view has the incidence it asks for, derived if need be, and not what
+    other filters happened to derive before: its class, and so every kernel
+    compiled for it, is the same either way."""
+    def fresh():
+        data = td.rectilinear_grid([0, 1, 2], [0, 1, 2, 3], [0, 1])
+        return data if make == "grid" else alg.tetrahedralize(data)
+
+    def cells(data, **kw):
+        group = next(g for g in data.topology.groups() if g.count)
+        return data.domain_view("cells", group, **kw)
+
+    data = fresh()
+    plain = type(cells(data))
+    assert not hasattr(plain, "face_id") and not hasattr(plain, "edge_id")
+    asked = cells(data, incidence=("faces", "edges"))          # derives them
+    assert hasattr(asked, "face_id") and hasattr(asked, "edge_id")
+    assert data.topology._faces is not None and data.topology._edges is not None
+    assert type(cells(data)) is plain
+    assert type(cells(fresh(), incidence="faces")) is type(cells(data, incidence="faces"))
+    with pytest.raises(ValueError, match="incidence"):
+        cells(data, incidence="points")
 
 
 # ── Faces and edges, against VTK ────────────────────────────────────
@@ -740,8 +765,8 @@ def test_subgroups_keep_their_cells_incidence(backend, make):
     varying = td.Field(td.L2(data, order=orders), tack.arrays.ConstantArray(0.0, td.L2(data, order=orders).size))
     uniform = td.Field(td.L2(data), tack.arrays.ConstantArray(0.0, td.L2(data).size))
     got, expected = tack.zeros((n,), tack.i32), tack.zeros((n,), tack.i32)
-    td.for_each(_face_ids_seen, data, "cells", varying, got)
-    td.for_each(_face_ids_seen, data, "cells", uniform, expected)
+    td.for_each(_face_ids_seen, data, "cells", varying, got, incidence="faces")
+    td.for_each(_face_ids_seen, data, "cells", uniform, expected, incidence="faces")
     np.testing.assert_array_equal(got.numpy(), expected.numpy())
 
 
@@ -809,7 +834,7 @@ def _check_orientation(data):
     points = _scalars(np.full(n, -1), tack.i32)
     slots = _scalars(np.full(n, -1), tack.i32)
     reflected = _scalars(np.zeros(data.num_cells * 6), tack.i32)
-    td.for_each(_face_positions, data, "cells", points, slots, reflected)
+    td.for_each(_face_positions, data, "cells", points, slots, reflected, incidence="faces")
     points, slots = points.numpy(), slots.numpy()
     used = slots >= 0
     rows = faces.rows.numpy().reshape(-1)              # slots index components

@@ -893,7 +893,7 @@ def _jump(faces, values, out):
 td.for_each(_jump, data, "faces", cell_values, out)
 ```
 
-`for_each(kernel, data, domain, *args)`:
+`for_each(kernel, data, domain, *args, incidence=())`:
 
 - `domain` is `"cells"`, `"faces"`, `"edges"` or the name of a cell, face or
   edge set.
@@ -901,6 +901,12 @@ td.for_each(_jump, data, "faces", cell_values, out)
   that group (`for i in view`). Each `Field` among `args` becomes its view
   for the same group, so `u.value(i, pc)` reads entity `i`. Other arguments
   are passed through unchanged.
+- A kernel over shape-based cells that reads their faces or edges names them
+  in `incidence`: `"faces"` for `face_id`, `face_side`, `face_orientation`
+  and `face_position`, `"edges"` for `edge_id` and `edge_sign`, or both. They
+  are derived if they are not yet. A view has only the incidence asked for,
+  whatever other filters derived before, so a kernel compiles the same way
+  every time. `data.domain_view(domain, group, incidence=...)` takes the same.
 - There is no `"points"` domain. Point data, like any field's values taken
   one by one, is read by an ordinary kernel over `field.values`.
 - `domain` may also be a space: the kernel runs over its nodes, each once
@@ -985,7 +991,9 @@ algorithms are written once:
   the shape's tables (`parametric_point(j)`, `edge_corner(e, k)`,
   `face_corner(f, k)`, `face_num_points(f)`, `face_shape(f)`, shape
   functions); face incidence (`face_orientation`, `face_position`); and edges
-  (`edge_id`, `edge_sign`). A face's corners go round it, a voxel's too.
+  (`edge_id`, `edge_sign`). A face's corners go round it, a voxel's too. Their
+  `face_id`, `face_side` and the rest of the face incidence, and the edges,
+  are there when the launch asks for them (`incidence`, under `for_each`).
 - Polyhedral, polygonal and polyline cells add `num_points(c)` and
   `point_id(c, j)` over the cell's distinct points, and `point_position(p)`.
   Polyline cells add their chain in order: `line_num_points(c)`,

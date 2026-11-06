@@ -766,7 +766,7 @@ hip-python 7.x's struct wrappers do not expose array handles or fixed-size array
 
 The Level Zero codegen (`opencl_gen.py`) extends `CUDACodeGen` — OpenCL C kernel syntax mirrors CUDA with different qualifiers (`__kernel`/`__global`, `get_group_id(0)*get_local_size(0)+get_local_id(0)`/`blockIdx*blockDim+threadIdx`, `__local`/`__shared__`, `barrier()`/`__syncthreads()`). Math functions are overloaded (no `f` suffix). The runtime (`level_zero_backend.py`) uses ctypes bindings to `libze_loader.so` and `libocloc.so`.
 
-Compilation pipeline: OpenCL C source → `libocloc.so` (in-process, via `oclocInvoke`, `_OCLOC_OPTIONS`) → SPIR-V → `zeModuleCreate` (`_MODULE_BUILD_FLAGS`; IGC finalizes here) → `zeKernelCreate`. The disk cache stores the module's native binary beside the SPIR-V (see Disk cache). The ocloc library is part of the Intel compute runtime (`intel-opencl-icd` package).
+Compilation pipeline: OpenCL C source → `libocloc.so` (in-process, via `oclocInvoke`, `_OCLOC_OPTIONS`) → SPIR-V → `zeModuleCreate` (`_MODULE_BUILD_FLAGS`; IGC finalizes here) → `zeKernelCreate`. The disk cache stores the module's native binary beside the SPIR-V (see Disk cache). The ocloc library is part of the Intel compute runtime (`intel-opencl-icd` package). Every generated kernel requires sub-groups of 16 (`OCL_SUB_GROUP_SIZE`): IGC 2.7.11's SIMD32 code for five tack-vis kernels was wrong (a vendor workaround; see `docs/design/vendor-workarounds.md` before removing it).
 
 Requires: `libze_loader.so` (Level Zero runtime), `libocloc.so` (Intel offline compiler). No Python packages needed.
 

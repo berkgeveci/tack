@@ -2051,35 +2051,44 @@ def _stored_on_host(values):
 def _stored_on_device(values):
     """Whether ``values`` is a stored interleaved array in a GPU's memory that VTK can
     share: through DLPack, as a Viskores array (``array_to_vtk``), where this VTK
-    has it."""
+    has it for that device."""
     if not (isinstance(values, tack.Array) and values.device.type in _DEVICE_SPACES
             and getattr(values, "layout", "aos") == "aos"):
         return False
     try:
-        _dlpack_support()
+        dlpack_support = _dlpack_support()
     except RuntimeError:
         return False
+    _require_shared_level_zero_context(dlpack_support, values._backend)
     return _vtk_holds(values.device)
 
 
-#: Whether this VTK holds each type of device's memory in its arrays, by the type.
-_holds = {}
+#: Whether this VTK keeps a device's memory in a device array, by the device's
+#: memory domain (``_vtk_holds``).
+_held = {}
 
 
 def _vtk_holds(device):
-    """Whether this VTK makes arrays of ``device``'s memory: a four-value array is
-    tried once for each type of device. A VTK with DLPack whose Viskores has no such
-    device (the nightly wheels', on the CPU alone) still lists the type in
-    ``dlpack_support.supported_device_types()``, and refuses it only when asked."""
-    if device.type not in _holds:
+    """Whether this VTK's DLPack import keeps ``device``'s memory in a device array.
+    A VTK with ``dlpack_support`` may still have no layer for that device (VTK
+    master's wheels wrap device memory through a Viskores built for none of Tack's
+    GPUs, and refuse it), so an array of one value is shared and the memory space
+    of VTK's array read, once per device (VTK's error for a refusal not shown)."""
+    from vtkmodules.vtkCommonCore import vtkObject
+
+    domain = device._backend.memory_domain
+    if domain not in _held:
+        shown = vtkObject.GetGlobalWarningDisplay()
+        vtkObject.GlobalWarningDisplayOff()
         try:
-            # Not array_to_vtk: a Level Zero context VTK does not share is its
-            # error to give, where the array is made.
-            probe = _dlpack_support().dlpack_to_vtk(tack.zeros((4, 1), device=device))
-            _holds[device.type] = _device_type(probe) == device.type
+            probe = array_to_vtk(tack.zeros((1,), device=device))
         except (ImportError, RuntimeError):
-            _holds[device.type] = False
-    return _holds[device.type]
+            _held[domain] = False
+        else:
+            _held[domain] = _device_type(probe) == device.type
+        finally:
+            vtkObject.SetGlobalWarningDisplay(shown)
+    return _held[domain]
 
 
 def _vtk_cells(offsets, connectivity, share=False):

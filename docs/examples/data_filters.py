@@ -248,7 +248,7 @@ def contour(data, name, level):
     connectivity = tack.empty((2 * lines,), idt, device=device)
     sources = tack.empty((lines,), idt, device=device)
     td.for_each(_segments, data, "cells", u, level, counts, starts, slots, connectivity,
-                sources)
+                sources, incidence="faces")
     out = td.UnstructuredTopology(ConstantArray(int(td.shapes.LINE), lines, dtype=tack.u8,
                                                 device=device),
                                   CountingArray(lines + 1, start=0, step=2, dtype=idt),
