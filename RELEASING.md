@@ -45,7 +45,24 @@ token.
 6. **Tag and push.** Push `v0.7.0` on the merge commit. The workflow checks
    that the tag is the package's version, builds and checks again, and waits
    for the `pypi` environment's approval. Approve, and it publishes.
-7. **Check PyPI.**
+7. **The GitHub Release.** Publish a release from the tag, titled
+   `Tack 0.7.0`, its notes the version's section of `CHANGELOG.md` (the
+   summary and the entries, without the heading):
+
+   ```bash
+   python3 - > /tmp/notes.md <<'EOF'
+   s = open("CHANGELOG.md").read()
+   start = s.index("\n", s.index("## 0.7.0 ")) + 1
+   print(s[start:s.index("\n## ", start)].strip())
+   EOF
+   gh release create v0.7.0 --verify-tag --title "Tack 0.7.0" --notes-file /tmp/notes.md
+   ```
+
+   Publishing it runs `.github/workflows/docs-versions.yml`, which builds the
+   tag's documentation as `0.7` on GitHub Pages and makes it `latest`, the
+   site's default; the tag alone builds no documentation. GitHub limits the
+   notes to 125,000 characters.
+8. **Check PyPI.**
    - Run `pip install 'tack-core[cpu]'` in a clean environment, then the
      tack-vis command from `docs/install.md`.
    - The GPU extras are checked on the GPU machines (`[cuda]` on jura, `[hip]`
