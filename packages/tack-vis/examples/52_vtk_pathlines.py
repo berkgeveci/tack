@@ -30,6 +30,7 @@ Usage:
 """
 
 import argparse
+import os
 
 import numpy as np
 
@@ -77,7 +78,9 @@ def ends(lines):
 # THE CASE
 # ================================================================
 
-reader = vtkOpenFOAMReader(file_name=_vtk_data.path("OpenFOAM/cavity/cavity.foam"))
+# The case's directory, so that every file of the case is fetched.
+reader = vtkOpenFOAMReader(
+    file_name=os.path.join(_vtk_data.path("OpenFOAM/cavity"), "cavity.foam"))
 reader.UpdateInformation()
 steps = list(reader.GetOutputInformation(0).Get(
     vtkStreamingDemandDrivenPipeline.TIME_STEPS()))

@@ -2059,7 +2059,27 @@ def _stored_on_device(values):
         _dlpack_support()
     except RuntimeError:
         return False
-    return True
+    return _vtk_holds(values.device)
+
+
+#: Whether this VTK holds each type of device's memory in its arrays, by the type.
+_holds = {}
+
+
+def _vtk_holds(device):
+    """Whether this VTK makes arrays of ``device``'s memory: a four-value array is
+    tried once for each type of device. A VTK with DLPack whose Viskores has no such
+    device (the nightly wheels', on the CPU alone) still lists the type in
+    ``dlpack_support.supported_device_types()``, and refuses it only when asked."""
+    if device.type not in _holds:
+        try:
+            # Not array_to_vtk: a Level Zero context VTK does not share is its
+            # error to give, where the array is made.
+            probe = _dlpack_support().dlpack_to_vtk(tack.zeros((4, 1), device=device))
+            _holds[device.type] = _device_type(probe) == device.type
+        except (ImportError, RuntimeError):
+            _holds[device.type] = False
+    return _holds[device.type]
 
 
 def _vtk_cells(offsets, connectivity, share=False):
