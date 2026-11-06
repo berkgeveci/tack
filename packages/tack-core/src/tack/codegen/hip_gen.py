@@ -39,6 +39,8 @@ class HIPCodeGen(CUDACodeGen):
     # hipRTC compiles with -ffp-contract=on, which keeps fusion inside an
     # expression: products need no explicit rounding (CUDACodeGen).
     _rounded_products = False
+    # The bounds check helper is not inlined (codegen/bounds.py).
+    _BOUNDS_DIALECT = "hip"
 
     def generate(self) -> str:
         """Generate HIP C source for the kernel."""

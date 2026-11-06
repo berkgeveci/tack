@@ -212,7 +212,7 @@ class CUDACodeGen(CFamilyCodeGen):
                 self._integer_division_helpers, _C_TYPE_MAP, '__device__ inline')
             + self._integers.definitions('__device__ inline')
             + f32_reduction_helpers('cuda', self._block_extrema)
-            + bounds_helpers('cuda', self._needs_bounds)
+            + bounds_helpers(self._BOUNDS_DIALECT, self._needs_bounds)
         )
         prefix_lines += cuda_atomic64_helpers(self._atomic64)
         if self._needs_float_atomic_min:
