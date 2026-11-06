@@ -51,8 +51,17 @@ from vtkmodules.vtkIOGeometry import vtkOpenFOAMReader
 import tack
 from tack.interop.vtk.algorithms import FlowQuantities, Gradients, Integrate, SlicePlane
 
-tack.set_default_device(_args.arch)
-device = _args.arch
+if _args.arch == "level_zero":
+    # A VTK that holds Level Zero memory (its own device arrays, or Viskores on
+    # Kokkos' SYCL) takes back only arrays in its own context: make the device
+    # in that context where VTK has one, else Tack's own.
+    from tack.interop.vtk import init_level_zero
+    try:
+        device = init_level_zero()
+    except RuntimeError:                    # this VTK holds no Level Zero memory
+        device = tack.set_default_device("level_zero")
+else:
+    device = tack.set_default_device(_args.arch)
 
 
 def tree(multiblock, indent="  "):
