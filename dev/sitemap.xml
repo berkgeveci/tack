@@ -2,414 +2,414 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://kitware.github.io/tack/dev/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/install/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/performance/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/use-cases/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/communication/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/communication/blocks-and-worlds/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/communication/exchange-and-plans/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/communication/mpi/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/communication/routing/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/communication/sort-and-reduce/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/contracts/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/contracts/backend-capabilities/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/contracts/conformance/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/contracts/runtime-api/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/core/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/core/arrays-and-types/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/core/asyncio/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/core/choose-a-device/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/core/control-flow-and-math/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/core/debug-and-time/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/core/device-classes/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/core/device-functions/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/core/examples/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/core/how-programs-run/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/core/kernel-cache/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/core/kernels/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/core/memory-and-correctness/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/core/reductions-scans-sorts/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/core/share-arrays/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/core/vectors-and-matrices/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/core/workgroups-atomics-textures/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/data/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/data/amr-and-octrees/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/data/build-meshes-and-fields/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/data/cells-and-meshes/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/data/connect-simulation-data/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/data/devices/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/data/fields/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/data/higher-order/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/data/particles/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/data/pieces/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/data/polyhedra/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/data/storage-and-layouts/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/data/topology-and-geometry/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/data/units-coordinates-time/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/design/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/design/array-api/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/design/backend-implementations/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/design/compilation-pipeline/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/design/cpu-threading/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/design/interoperability/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/design/memory-and-aliasing/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/design/numerical-semantics/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/design/parallel-execution/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/design/principles/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/design/specialization-and-caching/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/design/vendor-workarounds/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/developers-guide/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/developers-guide/01-architecture/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/developers-guide/02-ast-transform/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/developers-guide/03-ir/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/developers-guide/04-ir-passes/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/developers-guide/05-codegen/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/developers-guide/06-runtime/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/developers-guide/07-templates/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/developers-guide/08-adding-features/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/reference/api/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/reference/backends/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/reference/glossary/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/reference/language-contract/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/users-guide/tutorials/contours/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/users-guide/tutorials/dye/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/users-guide/tutorials/heat/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/users-guide/tutorials/mpm/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/users-guide/tutorials/nbody/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/users-guide/tutorials/physarum/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/vis-guide/16-cells-and-bases/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/vis-guide/gallery/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/vis-guide/mfem-gallery/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/vis-guide/design/dataset-api/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/vis-guide/design/polyhedra/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/vis-guide/design/view-composition/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/vis-guide/reference/algorithms/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/vis-guide/reference/data-model/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/vis-guide/reference/dataset-api/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/vis-guide/reference/interop/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/vis-guide/reference/units/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/visualization/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/visualization/adaptive-data/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/visualization/derive/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/visualization/examples/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/visualization/extract/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/visualization/finite-volume/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/visualization/mfem-warp-and-others/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/visualization/over-pieces/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/visualization/over-time/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/visualization/points-and-particles/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/visualization/reduce/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/visualization/sample-and-trace/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/visualization/views/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/visualization/vtk/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/visualization/write-a-filter/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
     <url>
          <loc>https://kitware.github.io/tack/dev/visualization/write-a-mesh-algorithm/</loc>
-         <lastmod>2026-11-05</lastmod>
+         <lastmod>2026-11-06</lastmod>
     </url>
 </urlset>
