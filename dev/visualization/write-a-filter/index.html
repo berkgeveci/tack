@@ -5698,7 +5698,7 @@ making it wrong.</p>
     <span class="n">connectivity</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">2</span> <span class="o">*</span> <span class="n">lines</span><span class="p">,),</span> <span class="n">idt</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
     <span class="n">sources</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">lines</span><span class="p">,),</span> <span class="n">idt</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
     <span class="n">td</span><span class="o">.</span><span class="n">for_each</span><span class="p">(</span><span class="n">_segments</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">u</span><span class="p">,</span> <span class="n">level</span><span class="p">,</span> <span class="n">counts</span><span class="p">,</span> <span class="n">starts</span><span class="p">,</span> <span class="n">slots</span><span class="p">,</span> <span class="n">connectivity</span><span class="p">,</span>
-                <span class="n">sources</span><span class="p">)</span>
+                <span class="n">sources</span><span class="p">,</span> <span class="n">incidence</span><span class="o">=</span><span class="s2">&quot;faces&quot;</span><span class="p">)</span>
     <span class="n">out</span> <span class="o">=</span> <span class="n">td</span><span class="o">.</span><span class="n">UnstructuredTopology</span><span class="p">(</span><span class="n">ConstantArray</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">td</span><span class="o">.</span><span class="n">shapes</span><span class="o">.</span><span class="n">LINE</span><span class="p">),</span> <span class="n">lines</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">tack</span><span class="o">.</span><span class="n">u8</span><span class="p">,</span>
                                                 <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">),</span>
                                   <span class="n">CountingArray</span><span class="p">(</span><span class="n">lines</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">start</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">step</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">idt</span><span class="p">),</span>
@@ -5717,7 +5717,8 @@ a triangle. So <code>carry</code> gets a map for each.</p>
   scan numbers them. A second kernel records each new point's two ends and its
   weight, how far it lies from the first end. The two triangles on an edge
   then name its point by the same number, <code>slots[face_id]</code>, so their lines
-  join.</li>
+  join. That kernel over the triangles reads their faces, so its <code>for_each</code>
+  asks for them: <code>incidence="faces"</code>.</li>
 <li><strong>Place each crossing as the built-ins do.</strong> <code>td.edge_crossing</code> is the rule
   every built-in cut uses. It interpolates from the end that comes first by
   position (x, then y, then z), so every piece holding the edge computes the

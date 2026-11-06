@@ -9898,8 +9898,7 @@ normals are dimensionless.</p>
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>packages/tack-vis/src/tack/dataset/algorithms/surface_normals.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">197</span>
-<span class="normal">198</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">198</span>
 <span class="normal">199</span>
 <span class="normal">200</span>
 <span class="normal">201</span>
@@ -9935,7 +9934,8 @@ normals are dimensionless.</p>
 <span class="normal">231</span>
 <span class="normal">232</span>
 <span class="normal">233</span>
-<span class="normal">234</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">234</span>
+<span class="normal">235</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">surface_normals</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">consistent</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">weights</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A surface -- triangles, quads, pixels or polygons -- with its normals: the</span>
 <span class="sd">    unit normal of each cell (Newell&#39;s, round its corners) as the cell field</span>
@@ -11041,7 +11041,7 @@ edges, and sets carry over; fields needing a reference element are dropped.</p>
     <span class="n">same_way</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">1</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">i32</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">topology</span><span class="o">.</span><span class="n">groups</span><span class="p">():</span>
         <span class="k">if</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span><span class="p">:</span>
-            <span class="n">_same_way</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">),</span> <span class="n">same_way</span><span class="p">)</span>
+            <span class="n">_same_way</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">,</span> <span class="n">incidence</span><span class="o">=</span><span class="s2">&quot;faces&quot;</span><span class="p">),</span> <span class="n">same_way</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">same_way</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">same_way</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2"> faces are wound the same way by both their cells &quot;</span>
                          <span class="s2">&quot;(an inside-out cell beside an upright one, as cell_geometry&#39;s &quot;</span>
@@ -11072,8 +11072,8 @@ edges, and sets carry over; fields needing a reference element are dropped.</p>
     <span class="n">cell_face_sides</span> <span class="o">=</span> <span class="n">tack</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">entries</span><span class="p">,),</span> <span class="n">tack</span><span class="o">.</span><span class="n">u8</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">topology</span><span class="o">.</span><span class="n">groups</span><span class="p">():</span>
         <span class="k">if</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span><span class="p">:</span>
-            <span class="n">_cell_face_entries</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">),</span> <span class="n">cell_offsets</span><span class="p">,</span> <span class="n">cell_faces</span><span class="p">,</span>
-                               <span class="n">cell_face_sides</span><span class="p">)</span>
+            <span class="n">_cell_face_entries</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">,</span> <span class="n">incidence</span><span class="o">=</span><span class="s2">&quot;faces&quot;</span><span class="p">),</span>
+                               <span class="n">cell_offsets</span><span class="p">,</span> <span class="n">cell_faces</span><span class="p">,</span> <span class="n">cell_face_sides</span><span class="p">)</span>
     <span class="n">out</span> <span class="o">=</span> <span class="n">PolyhedralTopology</span><span class="p">(</span><span class="n">starts</span><span class="p">,</span> <span class="n">face_points</span><span class="p">,</span> <span class="n">cell_offsets</span><span class="p">,</span> <span class="n">cell_faces</span><span class="p">,</span> <span class="n">cell_face_sides</span><span class="p">,</span>
                              <span class="n">num_points</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">num_points</span><span class="p">)</span>
 
@@ -14175,7 +14175,8 @@ included.</p>
 <span class="normal">87</span>
 <span class="normal">88</span>
 <span class="normal">89</span>
-<span class="normal">90</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">90</span>
+<span class="normal">91</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">jump</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">field</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A field&#39;s difference across each face at the face&#39;s center, side 1 minus side</span>
 <span class="sd">    0 (zero on the boundary): a field on faces. Each side is the field as its own</span>
@@ -14204,7 +14205,8 @@ included.</p>
             <span class="n">sides</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">launch_groups</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="p">[</span><span class="n">field</span><span class="p">]):</span>
             <span class="k">if</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span><span class="p">:</span>
-                <span class="n">_side_centers</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">),</span> <span class="n">field</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">group</span><span class="p">),</span> <span class="n">sides</span><span class="p">)</span>
+                <span class="n">_side_centers</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">,</span> <span class="n">incidence</span><span class="o">=</span><span class="s2">&quot;faces&quot;</span><span class="p">),</span>
+                              <span class="n">field</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">group</span><span class="p">),</span> <span class="n">sides</span><span class="p">)</span>
         <span class="n">for_each</span><span class="p">(</span><span class="n">_jump</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;faces&quot;</span><span class="p">,</span> <span class="n">sides</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">Field</span><span class="p">(</span><span class="n">Values</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;faces&quot;</span><span class="p">),</span> <span class="n">out</span><span class="p">,</span> <span class="n">units</span><span class="o">.</span><span class="n">delta</span><span class="p">(</span><span class="n">field</span><span class="o">.</span><span class="n">unit</span><span class="p">))</span>
 </code></pre></div></td></tr></table></div>
@@ -14354,7 +14356,7 @@ cell. Cells of a lower dimension than the mesh's have no faces: zero.</p>
     <span class="n">values</span> <span class="o">=</span> <span class="n">materialize</span><span class="p">(</span><span class="n">flux</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">launch_groups</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="p">[]):</span>
         <span class="k">if</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span> <span class="ow">and</span> <span class="n">group</span><span class="o">.</span><span class="n">shape</span><span class="o">.</span><span class="n">DIMENSION</span> <span class="o">==</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dimension</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="n">_outward_sums</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">),</span> <span class="n">values</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
+            <span class="n">_outward_sums</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">,</span> <span class="n">incidence</span><span class="o">=</span><span class="s2">&quot;faces&quot;</span><span class="p">),</span> <span class="n">values</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">Field</span><span class="p">(</span><span class="n">Values</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">),</span> <span class="n">out</span><span class="p">,</span> <span class="n">flux</span><span class="o">.</span><span class="n">unit</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
             </details>
@@ -14469,7 +14471,8 @@ than the mesh's (no faces of it) zero.</p>
 <span class="normal">55</span>
 <span class="normal">56</span>
 <span class="normal">57</span>
-<span class="normal">58</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
+<span class="normal">58</span>
+<span class="normal">59</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@on_inputs_device</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">perot</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">flux</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A vector per cell from each face&#39;s normal component -- Perot&#39;s reconstruction,</span>
 <span class="sd">    ``u_c = (1/V) sum_f A_f u_f (r_f - r_c)``, as C-grid models (MPAS, ICON) need to</span>
@@ -14491,7 +14494,8 @@ than the mesh's (no faces of it) zero.</p>
     <span class="n">out</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>                       <span class="c1"># cells of a lower dimension, and vertices: no faces</span>
     <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">launch_groups</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="p">[]):</span>
         <span class="k">if</span> <span class="n">group</span><span class="o">.</span><span class="n">count</span> <span class="ow">and</span> <span class="n">group</span><span class="o">.</span><span class="n">shape</span><span class="o">.</span><span class="n">DIMENSION</span> <span class="o">==</span> <span class="n">data</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">dimension</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="n">_perot</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">),</span> <span class="n">materialize</span><span class="p">(</span><span class="n">flux</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="n">areas</span><span class="o">.</span><span class="n">values</span><span class="p">,</span>
+            <span class="n">_perot</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">domain_view</span><span class="p">(</span><span class="s2">&quot;cells&quot;</span><span class="p">,</span> <span class="n">group</span><span class="p">,</span> <span class="n">incidence</span><span class="o">=</span><span class="s2">&quot;faces&quot;</span><span class="p">),</span>
+                   <span class="n">materialize</span><span class="p">(</span><span class="n">flux</span><span class="o">.</span><span class="n">values</span><span class="p">),</span> <span class="n">areas</span><span class="o">.</span><span class="n">values</span><span class="p">,</span>
                    <span class="n">centers</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">centroids</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">volumes</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
     <span class="c1"># Areas times offsets over volumes cancel: the components&#39; unit.</span>
     <span class="k">return</span> <span class="n">Field</span><span class="p">(</span><span class="n">Values</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;cells&quot;</span><span class="p">),</span> <span class="n">out</span><span class="p">,</span> <span class="n">flux</span><span class="o">.</span><span class="n">unit</span><span class="p">)</span>

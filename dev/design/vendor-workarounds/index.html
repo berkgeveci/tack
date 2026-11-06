@@ -5168,6 +5168,13 @@ end: they follow from the contract, and no vendor fix would remove them.</p>
 <td><code>test_texture_snapshot.py</code></td>
 </tr>
 <tr>
+<td>Debug mode's bounds check helper (<code>__tack_in_bounds__</code>) is <code>__noinline__</code> (the <code>hip</code> dialect in <code>codegen/bounds.py</code>, <code>HIPCodeGen._BOUNDS_DIALECT</code>).</td>
+<td>ROCm 7.1.1's hipRTC on two MI210s (gfx90a; illyad, 2026-11-05)</td>
+<td>Inlined, at <code>-O2</code> and above (hipRTC's default <code>-O3</code>) some checks were given a 64-bit index whose low half was right and whose high half was <code>0x3f000000</code>, so an access in bounds was reported out of bounds and skipped. Seen only in <code>_values</code> of <code>subdivide</code> (the <code>edge_id</code> check of a high-order space); <code>-O0</code>/<code>-O1</code> were right, and plain mode, which has no helper, is unaffected.</td>
+<td><code>codegen/bounds.py</code>, <code>codegen/hip_gen.py</code></td>
+<td><code>TACK_DEBUG=1</code> on <code>test_high_order.py</code>'s HIP cases (<code>test_subdividing_an_l2_geometry_keeps_its_cells_apart</code>, <code>test_a_tolerance_chooses_the_steps</code>, <code>test_an_order_two_bound_holds_the_interior</code>, <code>test_mixed_meshes_subdivide_and_contour_as_one</code>)</td>
+</tr>
+<tr>
 <td>A launch is capped below 2^32 work-items.</td>
 <td>AMD's dispatch packet</td>
 <td>The packet counts work-items in 32 bits; a larger grid would wrap.</td>
@@ -5255,6 +5262,13 @@ and goes when 7.x support does.</p>
 <td>A chain of 64-bit equality tests on a selector that a conditional expression defined (<code>rows[f][j + 1 if j + 1 &lt; size else 0]</code> in a sequential loop) selected the first component for an even selector and the last for an odd one, so the polyhedra face kernels read a triangle's padded -1 under debug mode's bounds checks (TA-48). <code>-ze-opt-disable</code> avoided it, as did a 32-bit selector, a <code>switch</code> or plain index arithmetic; the generated OpenCL C is correct and the CPU agrees.</td>
 <td><code>lowering/vectors.py</code> (<code>_narrow_selector</code>)</td>
 <td><code>test_new_features.py</code> (<code>test_runtime_component_from_a_conditional_in_a_loop</code>) on Level Zero</td>
+</tr>
+<tr>
+<td>Every kernel requires sub-groups of 16 (<code>intel_reqd_sub_group_size(16)</code>), so none is compiled SIMD32.</td>
+<td>IGC 2.7.11 (compute runtime 25.05.32567.17, Max 1100)</td>
+<td>Five tack-vis kernels computed wrong crossings, lattice points and AMR ghost marks; see below.</td>
+<td><code>opencl_gen.py</code> (<code>OCL_SUB_GROUP_SIZE</code>)</td>
+<td><code>test_opencl_gen.py</code> (<code>test_every_kernel_requires_sub_groups_of_16</code>); on Level Zero, with <code>--ids=i32</code> and <code>--ids=i64</code>, <code>test_high_order.py</code> (<code>test_everything_in_f32_on_every_backend</code>), <code>test_simplex_order.py</code> (contours and slices) and <code>test_bernstein.py</code> (<code>test_pieces_share_their_coefficients_to_the_bit</code>), and <code>vis2_amr</code></td>
 </tr>
 <tr>
 <td>A stored native binary the driver refuses is rebuilt from the stored SPIR-V.</td>
@@ -5358,6 +5372,28 @@ requires <code>-0.0</code>. The <code>f32</code> overloads are correct. <code>Op
 wraps those two builtins at double width as <code>copysign(floor(x), x)</code>. Neither
 function ever changes the sign of its operand, so restoring it is exact for
 every input, and a no-op where the runtime is already correct.</p>
+<p><strong>Level Zero: no SIMD32 kernels.</strong> On an Intel Data Center GPU Max 1100
+(IGC 2.7.11, compute runtime 25.05.32567.17), five tack-vis kernels gave
+wrong answers as IGC compiled them: <code>_roots</code> and <code>_straight_rows</code> in
+<code>_crossings.py</code>, <code>_trace_simplex_straight</code> in <code>subdivide.py</code> (288 of 5914
+lattice points of a six-step subdivision misplaced) and
+<code>_ghost_points_of</code>/<code>_ghost_cells_of</code> in <code>amr_ghosts.py</code>. They failed the
+high-order contour in f32, and with 64-bit ids the Bernstein pieces and
+the simplex contour and slice; AMR <code>ghost_cells</code> of <code>vis2_amr</code>'s hierarchy
+marked the wrong points. The generated OpenCL C was correct, and the CPU
+and debug mode agreed. Each kernel was found by building halves of a
+test's kernels with <code>-ze-opt-disable</code>. That flag fixed each kernel's own
+test, but <code>_roots</code> unoptimized hung the f32 contour with 32-bit ids;
+<code>-ze-opt-large-register-file</code> fixed <code>_roots</code> there and not with 64-bit
+ids, and <code>-ze-opt-disable-recompilation</code> did the reverse. <code>_roots</code> with
+required SIMD32 failed both cases and with required SIMD16 passed both,
+fully optimized, as did all five kernels at SIMD16 in every case.
+Rewriting their selections as integer arithmetic fixed some cases and
+moved the error in others, and would have changed every backend's code.
+Compute runtime 26.40 (IGC 2.42) fixed <code>_roots</code> but gave NaNs in
+<code>_straight_rows</code>, so this is not gated on a version. <code>OpenCLCodeGen</code>
+puts <code>__attribute__((intel_reqd_sub_group_size(16)))</code> on every kernel;
+Intel GPUs from Gen9 on have sub-groups of 16.</p>
 <p><strong>OpenCL C dialect rules.</strong> Two inherited CUDA spellings are illegal OpenCL
 C and failed only on the device: a floating-point condition in <code>?:</code>
 (<code>_ifexp_condition</code> compares it against zero), and <code>__local</code> declarations

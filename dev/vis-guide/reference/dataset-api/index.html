@@ -7042,7 +7042,7 @@ a partitioned source), on <code>tack.communication</code>.</p>
 
 <span class="n">td</span><span class="o">.</span><span class="n">for_each</span><span class="p">(</span><span class="n">_jump</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="s2">&quot;faces&quot;</span><span class="p">,</span> <span class="n">cell_values</span><span class="p">,</span> <span class="n">out</span><span class="p">)</span>
 </code></pre></div>
-<p><code>for_each(kernel, data, domain, *args)</code>:</p>
+<p><code>for_each(kernel, data, domain, *args, incidence=())</code>:</p>
 <ul>
 <li><code>domain</code> is <code>"cells"</code>, <code>"faces"</code>, <code>"edges"</code> or the name of a cell, face or
   edge set.</li>
@@ -7050,6 +7050,12 @@ a partitioned source), on <code>tack.communication</code>.</p>
   that group (<code>for i in view</code>). Each <code>Field</code> among <code>args</code> becomes its view
   for the same group, so <code>u.value(i, pc)</code> reads entity <code>i</code>. Other arguments
   are passed through unchanged.</li>
+<li>A kernel over shape-based cells that reads their faces or edges names them
+  in <code>incidence</code>: <code>"faces"</code> for <code>face_id</code>, <code>face_side</code>, <code>face_orientation</code>
+  and <code>face_position</code>, <code>"edges"</code> for <code>edge_id</code> and <code>edge_sign</code>, or both. They
+  are derived if they are not yet. A view has only the incidence asked for,
+  whatever other filters derived before, so a kernel compiles the same way
+  every time. <code>data.domain_view(domain, group, incidence=...)</code> takes the same.</li>
 <li>There is no <code>"points"</code> domain. Point data, like any field's values taken
   one by one, is read by an ordinary kernel over <code>field.values</code>.</li>
 <li><code>domain</code> may also be a space: the kernel runs over its nodes, each once
@@ -7145,7 +7151,9 @@ algorithms are written once:</p>
   the shape's tables (<code>parametric_point(j)</code>, <code>edge_corner(e, k)</code>,
   <code>face_corner(f, k)</code>, <code>face_num_points(f)</code>, <code>face_shape(f)</code>, shape
   functions); face incidence (<code>face_orientation</code>, <code>face_position</code>); and edges
-  (<code>edge_id</code>, <code>edge_sign</code>). A face's corners go round it, a voxel's too.</li>
+  (<code>edge_id</code>, <code>edge_sign</code>). A face's corners go round it, a voxel's too. Their
+  <code>face_id</code>, <code>face_side</code> and the rest of the face incidence, and the edges,
+  are there when the launch asks for them (<code>incidence</code>, under <code>for_each</code>).</li>
 <li>Polyhedral, polygonal and polyline cells add <code>num_points(c)</code> and
   <code>point_id(c, j)</code> over the cell's distinct points, and <code>point_position(p)</code>.
   Polyline cells add their chain in order: <code>line_num_points(c)</code>,
